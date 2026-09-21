@@ -12,6 +12,7 @@ cameras = {
         "model": "AXIS Test Camera",
         "osVersion": "12.0",
         "uptime": 86400,
+        "temperatureAvailable": True,
         "temperature": 43.2,
         "storageHealthy": True,
     },
@@ -22,6 +23,7 @@ cameras = {
         "model": "AXIS Test Camera",
         "osVersion": "12.0",
         "uptime": 43200,
+        "temperatureAvailable": True,
         "temperature": 81.4,
         "storageHealthy": True,
     },
@@ -32,7 +34,8 @@ cameras = {
         "model": "AXIS Test Camera",
         "osVersion": "12.0",
         "uptime": 0,
-        "temperature": None,
+        "temperatureAvailable": False,
+        "temperature": 0.0,
         "storageHealthy": False,
     },
 }
@@ -43,7 +46,7 @@ def get_camera_status(camera):
     if not camera["online"]:
         return "OFFLINE"
 
-    if camera["temperature"] is not None and camera["temperature"] >= 70:
+    if camera["temperatureAvailable"] and camera["temperature"] >= 70:
         return "WARNING"
 
     if not camera["storageHealthy"]:

@@ -9,6 +9,7 @@ public class CameraData
     public string model;
     public string osVersion;
     public int uptime;
+    public bool temperatureAvailable;
     public float temperature;
     public bool storageHealthy;
     public string status;

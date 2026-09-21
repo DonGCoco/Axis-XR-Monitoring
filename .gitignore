@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+
+# Python
+**/venv/
+**/__pycache__/
+*.py[cod]
+.env
+
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# IDE
+.vscode/
+.idea/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+*.svd
+
+# Gradle / Android
+.gradle/

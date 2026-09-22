@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from flask import Flask, jsonify
 
 app = Flask(__name__)
@@ -41,6 +43,11 @@ cameras = {
 }
 
 
+def current_server_time():
+    """Return the current UTC time as an ISO-8601 timestamp."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
 def get_camera_status(camera):
     """Return a development-only health state for mock data."""
     if not camera["online"]:
@@ -58,12 +65,16 @@ def get_camera_status(camera):
 def camera_with_status(camera):
     result = camera.copy()
     result["status"] = get_camera_status(camera)
+    result["serverTime"] = current_server_time()
     return result
 
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({
+        "status": "ok",
+        "serverTime": current_server_time(),
+    })
 
 
 @app.get("/camera/<camera_id>")
@@ -71,7 +82,10 @@ def get_camera(camera_id):
     camera = cameras.get(camera_id.upper())
 
     if camera is None:
-        return jsonify({"error": "Camera not found"}), 404
+        return jsonify({
+            "error": "Camera not found",
+            "serverTime": current_server_time(),
+        }), 404
 
     return jsonify(camera_with_status(camera))
 
@@ -82,5 +96,4 @@ def get_all_cameras():
 
 
 if __name__ == "__main__":
-    # 0.0.0.0 allows a Quest on the same LAN to reach this Mac.
     app.run(host="0.0.0.0", port=5000, debug=True)

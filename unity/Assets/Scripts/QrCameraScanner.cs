@@ -14,9 +14,7 @@ public class QrCameraScanner : MonoBehaviour
     private void Awake()
     {
         if (apiClient == null)
-        {
             apiClient = FindFirstObjectByType<CameraApiClient>();
-        }
     }
 
     private void OnEnable()
@@ -27,9 +25,7 @@ public class QrCameraScanner : MonoBehaviour
     private IEnumerator WaitForMRUKAndSubscribe()
     {
         while (MRUK.Instance == null)
-        {
             yield return null;
-        }
 
         _mruk = MRUK.Instance;
 
@@ -82,21 +78,15 @@ public class QrCameraScanner : MonoBehaviour
         if (showStatusPanel)
         {
             if (_activePanel == null)
-            {
-                _activePanel = CameraStatusPanel.Create(trackable.transform);
-            }
+                _activePanel = CameraStatusPanel.CreateInFrontOfUser();
             else
-            {
-                _activePanel.SetAnchor(trackable.transform);
-            }
+                _activePanel.PlaceInFrontOfUser();
 
             _activePanel.ShowLoading(payload);
         }
 
         if (apiClient == null)
-        {
             apiClient = FindFirstObjectByType<CameraApiClient>();
-        }
 
         if (apiClient == null)
         {
@@ -140,8 +130,6 @@ public class QrCameraScanner : MonoBehaviour
     private void OnTrackableRemoved(MRUKTrackable trackable)
     {
         if (trackable.TrackableType == OVRAnchor.TrackableType.QRCode)
-        {
             Debug.Log("Axis camera QR removed.");
-        }
     }
 }

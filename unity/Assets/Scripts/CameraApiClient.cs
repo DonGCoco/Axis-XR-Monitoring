@@ -6,10 +6,10 @@ using UnityEngine.Networking;
 public class CameraApiClient : MonoBehaviour
 {
     [Header("Data Source")]
-    [Tooltip("When enabled, the Quest uses built-in demo camera data and does not need a computer, Flask, USB, or ADB reverse.")]
-    [SerializeField] private bool useEmbeddedMockData = true;
+    [Tooltip("Keep this OFF for the real demo so Quest fetches data from the online mock API over Wi-Fi.")]
+    [SerializeField] private bool useEmbeddedMockData = false;
 
-    [Tooltip("Used only when embedded mock data is disabled.")]
+    [Tooltip("Online mock API base URL. Example: https://your-service.onrender.com")]
     [SerializeField] private string baseUrl = "http://127.0.0.1:5000";
 
     public string BaseUrl
@@ -49,6 +49,7 @@ public class CameraApiClient : MonoBehaviour
                 return;
             }
 
+            mockCamera.serverTime = DateTime.UtcNow.ToString("o");
             Debug.Log($"USING EMBEDDED MOCK DATA | {normalizedId}");
             onSuccess?.Invoke(mockCamera);
             return;
@@ -119,7 +120,7 @@ public class CameraApiClient : MonoBehaviour
         string url = $"{baseUrl.TrimEnd('/')}/camera/{UnityWebRequest.EscapeURL(cameraId)}";
 
         using UnityWebRequest request = UnityWebRequest.Get(url);
-        request.timeout = 5;
+        request.timeout = 8;
 
         yield return request.SendWebRequest();
 

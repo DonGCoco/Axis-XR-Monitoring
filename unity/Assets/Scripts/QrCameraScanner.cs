@@ -1,19 +1,16 @@
+using System.Collections;
 using Meta.XR.MRUtilityKit;
 using UnityEngine;
 
 public class QrCameraScanner : MonoBehaviour
 {
-    [SerializeField] private MRUK mruk;
     [SerializeField] private CameraApiClient apiClient;
-    [SerializeField] private CameraStatusPanel statusPanelPrefab;
+
+    private MRUK _mruk;
+    private bool _subscribed;
 
     private void Awake()
     {
-        if (mruk == null)
-        {
-            mruk = FindFirstObjectByType<MRUK>();
-        }
-
         if (apiClient == null)
         {
             apiClient = FindFirstObjectByType<CameraApiClient>();
@@ -22,23 +19,39 @@ public class QrCameraScanner : MonoBehaviour
 
     private void OnEnable()
     {
-        if (mruk == null)
+        StartCoroutine(WaitForMRUKAndSubscribe());
+    }
+
+    private IEnumerator WaitForMRUKAndSubscribe()
+    {
+        while (MRUK.Instance == null)
         {
-            Debug.LogError("QrCameraScanner: MRUK component not found.");
-            return;
+            yield return null;
         }
 
-        mruk.SceneSettings.TrackableAdded.AddListener(OnTrackableAdded);
-        mruk.SceneSettings.TrackableRemoved.AddListener(OnTrackableRemoved);
+        _mruk = MRUK.Instance;
+
+        if (_mruk.SceneSettings == null)
+        {
+            Debug.LogError("QrCameraScanner: MRUK.SceneSettings is null.");
+            yield break;
+        }
+
+        _mruk.SceneSettings.TrackableAdded.AddListener(OnTrackableAdded);
+        _mruk.SceneSettings.TrackableRemoved.AddListener(OnTrackableRemoved);
+        _subscribed = true;
+
+        Debug.Log("QrCameraScanner ready. Waiting for CAM_* QR codes...");
     }
 
     private void OnDisable()
     {
-        if (mruk == null)
+        if (!_subscribed || _mruk == null || _mruk.SceneSettings == null)
             return;
 
-        mruk.SceneSettings.TrackableAdded.RemoveListener(OnTrackableAdded);
-        mruk.SceneSettings.TrackableRemoved.RemoveListener(OnTrackableRemoved);
+        _mruk.SceneSettings.TrackableAdded.RemoveListener(OnTrackableAdded);
+        _mruk.SceneSettings.TrackableRemoved.RemoveListener(OnTrackableRemoved);
+        _subscribed = false;
     }
 
     private void OnTrackableAdded(MRUKTrackable trackable)
@@ -50,7 +63,7 @@ public class QrCameraScanner : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(payload))
         {
-            Debug.LogWarning("QR code detected, but it does not contain a UTF-8 string payload.");
+            Debug.LogWarning("QR code detected, but it does not contain a text payload.");
             return;
         }
 
@@ -58,7 +71,7 @@ public class QrCameraScanner : MonoBehaviour
 
         if (!payload.StartsWith("CAM_"))
         {
-            Debug.Log($"Ignoring QR payload that is not a camera ID: {payload}");
+            Debug.Log($"Ignoring non-camera QR payload: {payload}");
             return;
         }
 
@@ -66,37 +79,34 @@ public class QrCameraScanner : MonoBehaviour
 
         if (apiClient == null)
         {
-            Debug.LogError("QrCameraScanner: CameraApiClient is not assigned.");
-            return;
+            apiClient = FindFirstObjectByType<CameraApiClient>();
         }
 
-        CameraStatusPanel panel = null;
-
-        if (statusPanelPrefab != null)
+        if (apiClient == null)
         {
-            panel = Instantiate(statusPanelPrefab, trackable.transform);
-            panel.transform.localPosition = new Vector3(0f, -0.15f, 0f);
-            panel.transform.localRotation = Quaternion.identity;
-            panel.ShowLoading(payload);
+            Debug.LogError("QrCameraScanner: CameraApiClient not found in scene.");
+            return;
         }
 
         apiClient.GetCamera(
             payload,
             data =>
             {
-                Debug.Log(
-                    $"Camera loaded from QR: {data.cameraId} | " +
-                    $"{data.name} | {data.status}");
+                string temperature = data.temperatureAvailable
+                    ? $"{data.temperature:0.0} C"
+                    : "N/A";
 
-                if (panel != null)
-                    panel.ShowCamera(data);
+                Debug.Log(
+                    $"CAMERA DATA OK | " +
+                    $"ID={data.cameraId} | " +
+                    $"Name={data.name} | " +
+                    $"Status={data.status} | " +
+                    $"Temperature={temperature} | " +
+                    $"StorageHealthy={data.storageHealthy}");
             },
             error =>
             {
-                Debug.LogError(error);
-
-                if (panel != null)
-                    panel.ShowError(payload, error);
+                Debug.LogError($"CAMERA DATA FAILED | {payload} | {error}");
             });
     }
 
@@ -104,7 +114,7 @@ public class QrCameraScanner : MonoBehaviour
     {
         if (trackable.TrackableType == OVRAnchor.TrackableType.QRCode)
         {
-            Debug.Log("QR code trackable removed.");
+            Debug.Log("Axis camera QR removed.");
         }
     }
 }

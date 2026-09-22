@@ -13,6 +13,7 @@ public class CameraData
     public float temperature;
     public bool storageHealthy;
     public string status;
+    public string serverTime;
 }
 
 [Serializable]

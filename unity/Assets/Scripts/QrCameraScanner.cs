@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using Meta.XR.MRUtilityKit;
 using UnityEngine;
@@ -54,6 +55,9 @@ public class QrCameraScanner : MonoBehaviour
 
     private void OnTrackableAdded(MRUKTrackable trackable)
     {
+        if (trackable == null)
+            return;
+
         if (trackable.TrackableType != OVRAnchor.TrackableType.QRCode)
             return;
 
@@ -77,12 +81,21 @@ public class QrCameraScanner : MonoBehaviour
 
         if (showStatusPanel)
         {
-            if (_activePanel == null)
-                _activePanel = CameraStatusPanel.CreateInFrontOfUser();
-            else
-                _activePanel.PlaceInFrontOfUser();
+            try
+            {
+                if (_activePanel == null)
+                    _activePanel = CameraStatusPanel.CreateInFrontOfUser();
+                else
+                    _activePanel.PlaceInFrontOfUser();
 
-            _activePanel.ShowLoading(payload);
+                if (_activePanel != null)
+                    _activePanel.ShowLoading(payload);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"CAMERA PANEL FAILED: {ex}");
+                _activePanel = null;
+            }
         }
 
         if (apiClient == null)
@@ -129,7 +142,10 @@ public class QrCameraScanner : MonoBehaviour
 
     private void OnTrackableRemoved(MRUKTrackable trackable)
     {
-        if (trackable.TrackableType == OVRAnchor.TrackableType.QRCode)
+        if (trackable != null &&
+            trackable.TrackableType == OVRAnchor.TrackableType.QRCode)
+        {
             Debug.Log("Axis camera QR removed.");
+        }
     }
 }

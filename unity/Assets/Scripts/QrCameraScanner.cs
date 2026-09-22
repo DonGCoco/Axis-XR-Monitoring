@@ -5,9 +5,11 @@ using UnityEngine;
 public class QrCameraScanner : MonoBehaviour
 {
     [SerializeField] private CameraApiClient apiClient;
+    [SerializeField] private bool showStatusPanel = true;
 
     private MRUK _mruk;
     private bool _subscribed;
+    private CameraStatusPanel _activePanel;
 
     private void Awake()
     {
@@ -77,6 +79,20 @@ public class QrCameraScanner : MonoBehaviour
 
         Debug.Log($"Axis camera QR detected: {payload}");
 
+        if (showStatusPanel)
+        {
+            if (_activePanel == null)
+            {
+                _activePanel = CameraStatusPanel.Create(trackable.transform);
+            }
+            else
+            {
+                _activePanel.SetAnchor(trackable.transform);
+            }
+
+            _activePanel.ShowLoading(payload);
+        }
+
         if (apiClient == null)
         {
             apiClient = FindFirstObjectByType<CameraApiClient>();
@@ -84,7 +100,12 @@ public class QrCameraScanner : MonoBehaviour
 
         if (apiClient == null)
         {
-            Debug.LogError("QrCameraScanner: CameraApiClient not found in scene.");
+            string message = "QrCameraScanner: CameraApiClient not found in scene.";
+            Debug.LogError(message);
+
+            if (_activePanel != null)
+                _activePanel.ShowError(payload, message);
+
             return;
         }
 
@@ -103,10 +124,16 @@ public class QrCameraScanner : MonoBehaviour
                     $"Status={data.status} | " +
                     $"Temperature={temperature} | " +
                     $"StorageHealthy={data.storageHealthy}");
+
+                if (_activePanel != null)
+                    _activePanel.ShowCamera(data);
             },
             error =>
             {
                 Debug.LogError($"CAMERA DATA FAILED | {payload} | {error}");
+
+                if (_activePanel != null)
+                    _activePanel.ShowError(payload, error);
             });
     }
 

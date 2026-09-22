@@ -1,45 +1,55 @@
+using System.Collections;
 using Meta.XR.MRUtilityKit;
 using UnityEngine;
 
 public class QRCodeDebugLogger : MonoBehaviour
 {
     private MRUK _mruk;
-
-    private void Awake()
-    {
-        _mruk = MRUK.Instance;
-
-        if (_mruk == null)
-        {
-            Debug.LogError("QRCodeDebugLogger: MRUK.Instance not found in scene.");
-        }
-    }
+    private bool _subscribed;
 
     private void OnEnable()
     {
-        if (_mruk == null)
-            _mruk = MRUK.Instance;
+        Debug.Log("QRCodeDebugLogger component enabled.");
+        StartCoroutine(WaitForMRUKAndSubscribe());
+    }
 
-        if (_mruk == null)
-            return;
+    private IEnumerator WaitForMRUKAndSubscribe()
+    {
+        while (MRUK.Instance == null)
+        {
+            Debug.Log("QRCodeDebugLogger: waiting for MRUK.Instance...");
+            yield return null;
+        }
+
+        _mruk = MRUK.Instance;
+
+        if (_mruk.SceneSettings == null)
+        {
+            Debug.LogError("QRCodeDebugLogger: MRUK.SceneSettings is null.");
+            yield break;
+        }
 
         _mruk.SceneSettings.TrackableAdded.AddListener(OnTrackableAdded);
         _mruk.SceneSettings.TrackableRemoved.AddListener(OnTrackableRemoved);
+        _subscribed = true;
 
-        Debug.Log("QRCodeDebugLogger enabled. Waiting for QR codes...");
+        Debug.Log("QRCodeDebugLogger subscribed. Waiting for QR codes...");
     }
 
     private void OnDisable()
     {
-        if (_mruk == null)
+        if (!_subscribed || _mruk == null || _mruk.SceneSettings == null)
             return;
 
         _mruk.SceneSettings.TrackableAdded.RemoveListener(OnTrackableAdded);
         _mruk.SceneSettings.TrackableRemoved.RemoveListener(OnTrackableRemoved);
+        _subscribed = false;
     }
 
     private void OnTrackableAdded(MRUKTrackable trackable)
     {
+        Debug.Log($"Trackable added: {trackable.TrackableType}");
+
         if (trackable.TrackableType != OVRAnchor.TrackableType.QRCode)
             return;
 

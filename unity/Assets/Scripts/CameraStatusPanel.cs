@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -13,7 +14,7 @@ public class CameraStatusPanel : MonoBehaviour
 
         GameObject root = new GameObject("CameraStatusPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
         RectTransform rootRect = root.GetComponent<RectTransform>();
-        rootRect.sizeDelta = new Vector2(520f, 340f);
+        rootRect.sizeDelta = new Vector2(520f, 365f);
 
         Canvas canvas = root.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
@@ -143,6 +144,7 @@ public class CameraStatusPanel : MonoBehaviour
             : "N/A";
 
         string storage = camera.storageHealthy ? "Healthy" : "Problem";
+        string updated = FormatServerTime(camera.serverTime);
 
         SetText(
             $"{camera.name}\n{camera.cameraId}",
@@ -151,7 +153,8 @@ public class CameraStatusPanel : MonoBehaviour
             $"OS: {camera.osVersion}\n" +
             $"Temperature: {temperature}\n" +
             $"Storage: {storage}\n" +
-            $"Uptime: {FormatUptime(camera.uptime)}");
+            $"Uptime: {FormatUptime(camera.uptime)}\n" +
+            $"Updated: {updated}");
     }
 
     public void ShowError(string cameraId, string error)
@@ -188,6 +191,23 @@ public class CameraStatusPanel : MonoBehaviour
 
         if (_detailsText != null)
             _detailsText.text = details;
+    }
+
+    private static string FormatServerTime(string serverTime)
+    {
+        if (string.IsNullOrWhiteSpace(serverTime))
+            return "N/A";
+
+        if (DateTime.TryParse(
+            serverTime,
+            null,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out DateTime parsed))
+        {
+            return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        return serverTime;
     }
 
     private static string FormatUptime(int seconds)

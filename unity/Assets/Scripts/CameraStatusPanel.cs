@@ -1,34 +1,40 @@
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class CameraStatusPanel : MonoBehaviour
 {
-    private TMP_Text _titleText;
-    private TMP_Text _statusText;
-    private TMP_Text _detailsText;
-    private Camera _mainCamera;
+    private Text _titleText;
+    private Text _statusText;
+    private Text _detailsText;
 
     public static CameraStatusPanel CreateInFrontOfUser()
     {
-        GameObject root = new GameObject(
-            "CameraStatusPanel",
-            typeof(RectTransform),
-            typeof(Canvas),
-            typeof(CanvasScaler));
+        Debug.Log("CAMERA PANEL STEP 1: creating root");
 
+        GameObject root = new GameObject("CameraStatusPanel", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
         RectTransform rootRect = root.GetComponent<RectTransform>();
         rootRect.sizeDelta = new Vector2(520f, 340f);
-        root.transform.localScale = Vector3.one * 0.001f;
 
         Canvas canvas = root.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.sortingOrder = 100;
 
-        GameObject background = new GameObject(
-            "Background",
-            typeof(RectTransform),
-            typeof(Image));
+        Camera camera = FindCamera();
+        if (camera == null)
+        {
+            Debug.LogError("CAMERA PANEL FAILED: no camera found.");
+            Destroy(root);
+            return null;
+        }
+
+        root.transform.SetParent(camera.transform, false);
+        root.transform.localPosition = new Vector3(0f, -0.05f, 0.9f);
+        root.transform.localRotation = Quaternion.identity;
+        root.transform.localScale = Vector3.one * 0.001f;
+
+        Debug.Log("CAMERA PANEL STEP 2: creating background");
+
+        GameObject background = new GameObject("Background", typeof(RectTransform), typeof(Image));
         background.transform.SetParent(root.transform, false);
 
         RectTransform bgRect = background.GetComponent<RectTransform>();
@@ -40,25 +46,17 @@ public class CameraStatusPanel : MonoBehaviour
         Image bgImage = background.GetComponent<Image>();
         bgImage.color = new Color(0.03f, 0.04f, 0.05f, 0.96f);
 
+        Debug.Log("CAMERA PANEL STEP 3: creating text");
+
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
         CameraStatusPanel panel = root.AddComponent<CameraStatusPanel>();
+        panel._titleText = CreateText(root.transform, "Title", font, 30, FontStyle.Bold);
+        panel._statusText = CreateText(root.transform, "Status", font, 25, FontStyle.Bold);
+        panel._detailsText = CreateText(root.transform, "Details", font, 22, FontStyle.Normal);
 
-        panel._titleText = CreateText(root.transform, "Title", 30f, FontStyles.Bold);
-        panel._statusText = CreateText(root.transform, "Status", 25f, FontStyles.Bold);
-        panel._detailsText = CreateText(root.transform, "Details", 22f, FontStyles.Normal);
-
-        RectTransform titleRect = panel._titleText.rectTransform;
-        titleRect.anchorMin = new Vector2(0f, 1f);
-        titleRect.anchorMax = new Vector2(1f, 1f);
-        titleRect.pivot = new Vector2(0.5f, 1f);
-        titleRect.offsetMin = new Vector2(24f, -90f);
-        titleRect.offsetMax = new Vector2(-24f, -20f);
-
-        RectTransform statusRect = panel._statusText.rectTransform;
-        statusRect.anchorMin = new Vector2(0f, 1f);
-        statusRect.anchorMax = new Vector2(1f, 1f);
-        statusRect.pivot = new Vector2(0.5f, 1f);
-        statusRect.offsetMin = new Vector2(24f, -145f);
-        statusRect.offsetMax = new Vector2(-24f, -95f);
+        SetRect(panel._titleText.rectTransform, 24f, -20f, -24f, -90f);
+        SetRect(panel._statusText.rectTransform, 24f, -95f, -24f, -145f);
 
         RectTransform detailsRect = panel._detailsText.rectTransform;
         detailsRect.anchorMin = new Vector2(0f, 0f);
@@ -66,45 +64,11 @@ public class CameraStatusPanel : MonoBehaviour
         detailsRect.offsetMin = new Vector2(24f, 20f);
         detailsRect.offsetMax = new Vector2(-24f, -155f);
 
-        panel.PlaceInFrontOfUser();
         Debug.Log("CAMERA PANEL CREATED in front of user.");
-
         return panel;
     }
 
-    private static TMP_Text CreateText(
-        Transform parent,
-        string objectName,
-        float fontSize,
-        FontStyles style)
-    {
-        GameObject textObject = new GameObject(
-            objectName,
-            typeof(RectTransform),
-            typeof(TextMeshProUGUI));
-
-        textObject.transform.SetParent(parent, false);
-
-        TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
-        text.fontSize = fontSize;
-        text.fontStyle = style;
-        text.color = Color.white;
-        text.alignment = TextAlignmentOptions.TopLeft;
-        text.enableWordWrapping = false;
-        text.raycastTarget = false;
-
-        if (TMP_Settings.defaultFontAsset != null)
-            text.font = TMP_Settings.defaultFontAsset;
-
-        return text;
-    }
-
-    private void Awake()
-    {
-        _mainCamera = FindCamera();
-    }
-
-    private Camera FindCamera()
+    private static Camera FindCamera()
     {
         if (Camera.main != null)
             return Camera.main;
@@ -112,49 +76,59 @@ public class CameraStatusPanel : MonoBehaviour
         return FindFirstObjectByType<Camera>();
     }
 
-    public void PlaceInFrontOfUser()
+    private static Text CreateText(
+        Transform parent,
+        string objectName,
+        Font font,
+        int fontSize,
+        FontStyle fontStyle)
     {
-        _mainCamera = FindCamera();
+        GameObject textObject = new GameObject(objectName, typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(parent, false);
 
-        if (_mainCamera == null)
-        {
-            Debug.LogError("CAMERA PANEL: No camera found.");
-            return;
-        }
+        Text text = textObject.GetComponent<Text>();
+        text.font = font;
+        text.fontSize = fontSize;
+        text.fontStyle = fontStyle;
+        text.color = Color.white;
+        text.alignment = TextAnchor.UpperLeft;
+        text.horizontalOverflow = HorizontalWrapMode.Overflow;
+        text.verticalOverflow = VerticalWrapMode.Overflow;
+        text.raycastTarget = false;
 
-        Transform cameraTransform = _mainCamera.transform;
-
-        transform.position =
-            cameraTransform.position +
-            cameraTransform.forward * 0.9f +
-            cameraTransform.up * -0.05f;
-
-        Vector3 towardCamera =
-            cameraTransform.position - transform.position;
-
-        transform.rotation =
-            Quaternion.LookRotation(towardCamera.normalized, Vector3.up);
-
-        Debug.Log(
-            $"CAMERA PANEL POSITIONED | position={transform.position} | camera={cameraTransform.position}");
+        return text;
     }
 
-    private void LateUpdate()
+    private static void SetRect(
+        RectTransform rect,
+        float left,
+        float top,
+        float right,
+        float bottom)
     {
-        if (_mainCamera == null)
-            _mainCamera = FindCamera();
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.offsetMin = new Vector2(left, bottom);
+        rect.offsetMax = new Vector2(right, top);
+    }
 
-        if (_mainCamera == null)
-            return;
+    public void PlaceInFrontOfUser()
+    {
+        Camera camera = FindCamera();
 
-        Vector3 towardCamera =
-            _mainCamera.transform.position - transform.position;
-
-        if (towardCamera.sqrMagnitude > 0.001f)
+        if (camera == null)
         {
-            transform.rotation =
-                Quaternion.LookRotation(towardCamera.normalized, Vector3.up);
+            Debug.LogError("CAMERA PANEL: no camera found while repositioning.");
+            return;
         }
+
+        transform.SetParent(camera.transform, false);
+        transform.localPosition = new Vector3(0f, -0.05f, 0.9f);
+        transform.localRotation = Quaternion.identity;
+        transform.localScale = Vector3.one * 0.001f;
+
+        Debug.Log("CAMERA PANEL POSITIONED in front of user.");
     }
 
     public void ShowLoading(string cameraId)
@@ -165,7 +139,7 @@ public class CameraStatusPanel : MonoBehaviour
     public void ShowCamera(CameraData camera)
     {
         string temperature = camera.temperatureAvailable
-            ? $"{camera.temperature:0.0} °C"
+            ? $"{camera.temperature:0.0} C"
             : "N/A";
 
         string storage = camera.storageHealthy ? "Healthy" : "Problem";
@@ -192,7 +166,7 @@ public class CameraStatusPanel : MonoBehaviour
 
         if (_statusText != null)
         {
-            _statusText.text = $"● {status}";
+            _statusText.text = "● " + status;
 
             switch (status)
             {

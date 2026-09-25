@@ -9,7 +9,7 @@ public class CameraApiClient : MonoBehaviour
     [Tooltip("Keep this OFF for the real demo so Quest fetches data from the online mock API over Wi-Fi.")]
     [SerializeField] private bool useEmbeddedMockData = false;
 
-    [Tooltip("Online mock API base URL. Example: https://your-service.onrender.com")]
+    [Tooltip("Online mock API base URL. Example: https://axis-xr-monitoring.onrender.com")]
     [SerializeField] private string baseUrl = "http://127.0.0.1:5000";
 
     public string BaseUrl
@@ -56,6 +56,33 @@ public class CameraApiClient : MonoBehaviour
         }
 
         StartCoroutine(GetCameraCoroutine(normalizedId, onSuccess, onError));
+    }
+
+    public void GetAllCameras(
+        Action<CameraData[]> onSuccess,
+        Action<string> onError = null)
+    {
+        if (useEmbeddedMockData)
+        {
+            CameraData[] cameras =
+            {
+                GetEmbeddedMockCamera("CAM_001"),
+                GetEmbeddedMockCamera("CAM_002"),
+                GetEmbeddedMockCamera("CAM_003")
+            };
+
+            string now = DateTime.UtcNow.ToString("o");
+            foreach (CameraData camera in cameras)
+            {
+                if (camera != null)
+                    camera.serverTime = now;
+            }
+
+            onSuccess?.Invoke(cameras);
+            return;
+        }
+
+        StartCoroutine(GetAllCamerasCoroutine(onSuccess, onError));
     }
 
     private static CameraData GetEmbeddedMockCamera(string cameraId)
@@ -156,5 +183,46 @@ public class CameraApiClient : MonoBehaviour
         }
 
         onSuccess?.Invoke(data);
+    }
+
+    private IEnumerator GetAllCamerasCoroutine(
+        Action<CameraData[]> onSuccess,
+        Action<string> onError)
+    {
+        string url = $"{baseUrl.TrimEnd('/')}/cameras";
+
+        using UnityWebRequest request = UnityWebRequest.Get(url);
+        request.timeout = 10;
+
+        yield return request.SendWebRequest();
+
+        if (request.result != UnityWebRequest.Result.Success)
+        {
+            string message =
+                $"Camera list request failed ({request.responseCode}): {request.error}\n{url}";
+            Debug.LogError(message);
+            onError?.Invoke(message);
+            yield break;
+        }
+
+        try
+        {
+            string wrappedJson = "{\"items\":" + request.downloadHandler.text + "}";
+            CameraDataList wrapper = JsonUtility.FromJson<CameraDataList>(wrappedJson);
+
+            if (wrapper == null || wrapper.items == null)
+            {
+                onError?.Invoke("Camera list API returned invalid JSON.");
+                yield break;
+            }
+
+            onSuccess?.Invoke(wrapper.items);
+        }
+        catch (Exception exception)
+        {
+            string message = $"Could not parse camera list JSON: {exception.Message}";
+            Debug.LogError(message);
+            onError?.Invoke(message);
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using Meta.XR.MRUtilityKit;
 using UnityEngine;
 
@@ -8,10 +9,30 @@ public class QrCameraScanner : MonoBehaviour
     [SerializeField] private CameraApiClient apiClient;
     [SerializeField] private bool showStatusPanel = true;
 
+    [Header("Repeat Scan")]
+    [Tooltip("How long the QR must be out of tracking before the same code can trigger again.")]
+    [SerializeField] private float rescanResetSeconds = 0.75f;
+
+    [Tooltip("Minimum time between two triggers of the same QR code.")]
+    [SerializeField] private float rescanCooldownSeconds = 1.5f;
+
     private MRUK _mruk;
     private bool _subscribed;
     private CameraStatusPanel _activePanel;
     private AxisMonitoringUI _monitoringUI;
+
+    private readonly List<QrTrackState> _trackedQrs =
+        new List<QrTrackState>();
+
+    private class QrTrackState
+    {
+        public MRUKTrackable trackable;
+        public string payload;
+        public bool wasTracked;
+        public bool armedForRescan;
+        public float untrackedSince = -1f;
+        public float lastTriggerTime = -999f;
+    }
 
     private void Awake()
     {
@@ -49,45 +70,147 @@ public class QrCameraScanner : MonoBehaviour
 
     private void OnDisable()
     {
-        if (!_subscribed || _mruk == null || _mruk.SceneSettings == null)
-            return;
+        if (_subscribed &&
+            _mruk != null &&
+            _mruk.SceneSettings != null)
+        {
+            _mruk.SceneSettings.TrackableAdded.RemoveListener(OnTrackableAdded);
+            _mruk.SceneSettings.TrackableRemoved.RemoveListener(OnTrackableRemoved);
+        }
 
-        _mruk.SceneSettings.TrackableAdded.RemoveListener(OnTrackableAdded);
-        _mruk.SceneSettings.TrackableRemoved.RemoveListener(OnTrackableRemoved);
         _subscribed = false;
+        _trackedQrs.Clear();
+    }
+
+    private void Update()
+    {
+        float now = Time.unscaledTime;
+
+        for (int i = _trackedQrs.Count - 1; i >= 0; i--)
+        {
+            QrTrackState state = _trackedQrs[i];
+
+            if (state.trackable == null)
+            {
+                _trackedQrs.RemoveAt(i);
+                continue;
+            }
+
+            bool isTracked = state.trackable.IsTracked;
+
+            if (!isTracked)
+            {
+                if (state.wasTracked)
+                {
+                    state.wasTracked = false;
+                    state.untrackedSince = now;
+                    state.armedForRescan = false;
+                }
+
+                if (!state.armedForRescan &&
+                    state.untrackedSince >= 0f &&
+                    now - state.untrackedSince >= rescanResetSeconds)
+                {
+                    state.armedForRescan = true;
+                    Debug.Log($"QR RE-SCAN ARMED: {state.payload}");
+                }
+
+                continue;
+            }
+
+            if (!state.wasTracked)
+            {
+                state.wasTracked = true;
+
+                if (state.armedForRescan &&
+                    now - state.lastTriggerTime >= rescanCooldownSeconds)
+                {
+                    state.armedForRescan = false;
+                    state.untrackedSince = -1f;
+                    state.lastTriggerTime = now;
+
+                    Debug.Log($"QR RE-SCANNED: {state.payload}");
+                    HandleCameraPayload(state.payload);
+                }
+            }
+        }
     }
 
     private void OnTrackableAdded(MRUKTrackable trackable)
     {
-        if (trackable == null)
+        if (!TryGetCameraPayload(trackable, out string payload))
             return;
-
-        if (trackable.TrackableType != OVRAnchor.TrackableType.QRCode)
-            return;
-
-        string payload = trackable.MarkerPayloadString;
-
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            Debug.LogWarning("QR code detected, but it does not contain a text payload.");
-            return;
-        }
-
-        payload = payload.Trim();
-
-        if (!payload.StartsWith("CAM_"))
-        {
-            Debug.Log($"Ignoring non-camera QR payload: {payload}");
-            return;
-        }
 
         Debug.Log($"Axis camera QR detected: {payload}");
 
+        QrTrackState existing =
+            _trackedQrs.Find(state => state.trackable == trackable);
+
+        if (existing == null)
+        {
+            _trackedQrs.Add(
+                new QrTrackState
+                {
+                    trackable = trackable,
+                    payload = payload,
+                    wasTracked = trackable.IsTracked,
+                    armedForRescan = false,
+                    untrackedSince = -1f,
+                    lastTriggerTime = Time.unscaledTime
+                });
+        }
+        else
+        {
+            existing.payload = payload;
+            existing.wasTracked = trackable.IsTracked;
+            existing.armedForRescan = false;
+            existing.untrackedSince = -1f;
+            existing.lastTriggerTime = Time.unscaledTime;
+        }
+
+        HandleCameraPayload(payload);
+    }
+
+    private bool TryGetCameraPayload(
+        MRUKTrackable trackable,
+        out string payload)
+    {
+        payload = null;
+
+        if (trackable == null)
+            return false;
+
+        if (trackable.TrackableType != OVRAnchor.TrackableType.QRCode)
+            return false;
+
+        string rawPayload = trackable.MarkerPayloadString;
+
+        if (string.IsNullOrWhiteSpace(rawPayload))
+        {
+            Debug.LogWarning(
+                "QR code detected, but it does not contain a text payload.");
+            return false;
+        }
+
+        rawPayload = rawPayload.Trim();
+
+        if (!rawPayload.StartsWith("CAM_"))
+        {
+            Debug.Log($"Ignoring non-camera QR payload: {rawPayload}");
+            return false;
+        }
+
+        payload = rawPayload;
+        return true;
+    }
+
+    private void HandleCameraPayload(string payload)
+    {
         if (_monitoringUI == null)
             _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
 
-        // Keep the old status panel only as a fallback if the new UX
-        // manager could not be created.
+        // Keep the old panel only as a fallback if the new UX manager
+        // could not be created.
         if (_monitoringUI == null && showStatusPanel)
         {
             try
@@ -160,10 +283,15 @@ public class QrCameraScanner : MonoBehaviour
 
     private void OnTrackableRemoved(MRUKTrackable trackable)
     {
-        if (trackable != null &&
-            trackable.TrackableType == OVRAnchor.TrackableType.QRCode)
+        if (trackable == null ||
+            trackable.TrackableType != OVRAnchor.TrackableType.QRCode)
         {
-            Debug.Log("Axis camera QR removed.");
+            return;
         }
+
+        _trackedQrs.RemoveAll(
+            state => state.trackable == trackable);
+
+        Debug.Log("Axis camera QR removed.");
     }
 }

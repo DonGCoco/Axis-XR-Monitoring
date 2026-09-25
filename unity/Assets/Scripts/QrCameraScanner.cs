@@ -11,11 +11,15 @@ public class QrCameraScanner : MonoBehaviour
     private MRUK _mruk;
     private bool _subscribed;
     private CameraStatusPanel _activePanel;
+    private AxisMonitoringUI _monitoringUI;
 
     private void Awake()
     {
         if (apiClient == null)
             apiClient = FindFirstObjectByType<CameraApiClient>();
+
+        _monitoringUI =
+            AxisMonitoringUI.EnsureExists(apiClient);
     }
 
     private void OnEnable()
@@ -79,7 +83,12 @@ public class QrCameraScanner : MonoBehaviour
 
         Debug.Log($"Axis camera QR detected: {payload}");
 
-        if (showStatusPanel)
+        if (_monitoringUI == null)
+            _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
+
+        // Keep the old status panel only as a fallback if the new UX
+        // manager could not be created.
+        if (_monitoringUI == null && showStatusPanel)
         {
             try
             {
@@ -103,10 +112,13 @@ public class QrCameraScanner : MonoBehaviour
 
         if (apiClient == null)
         {
-            string message = "QrCameraScanner: CameraApiClient not found in scene.";
+            string message =
+                "QrCameraScanner: CameraApiClient not found in scene.";
             Debug.LogError(message);
 
-            if (_activePanel != null)
+            if (_monitoringUI != null)
+                _monitoringUI.ShowFriendlyError(message);
+            else if (_activePanel != null)
                 _activePanel.ShowError(payload, message);
 
             return;
@@ -116,9 +128,10 @@ public class QrCameraScanner : MonoBehaviour
             payload,
             data =>
             {
-                string temperature = data.temperatureAvailable
-                    ? $"{data.temperature:0.0} C"
-                    : "N/A";
+                string temperature =
+                    data.temperatureAvailable
+                        ? $"{data.temperature:0.0} C"
+                        : "N/A";
 
                 Debug.Log(
                     $"CAMERA DATA OK | " +
@@ -128,14 +141,19 @@ public class QrCameraScanner : MonoBehaviour
                     $"Temperature={temperature} | " +
                     $"StorageHealthy={data.storageHealthy}");
 
-                if (_activePanel != null)
+                if (_monitoringUI != null)
+                    _monitoringUI.ShowScannedCamera(data);
+                else if (_activePanel != null)
                     _activePanel.ShowCamera(data);
             },
             error =>
             {
-                Debug.LogError($"CAMERA DATA FAILED | {payload} | {error}");
+                Debug.LogError(
+                    $"CAMERA DATA FAILED | {payload} | {error}");
 
-                if (_activePanel != null)
+                if (_monitoringUI != null)
+                    _monitoringUI.ShowFriendlyError(error);
+                else if (_activePanel != null)
                     _activePanel.ShowError(payload, error);
             });
     }

@@ -17,6 +17,12 @@ public class CameraData
 }
 
 [Serializable]
+public class CameraDataList
+{
+    public CameraData[] items;
+}
+
+[Serializable]
 public class CameraError
 {
     public string error;

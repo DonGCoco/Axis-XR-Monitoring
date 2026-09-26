@@ -1,0 +1,17 @@
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/GAToUnityCallbacks.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/MacroEnd.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/MacroHeaderBegin.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/MacroSourceBegin.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGAApplication.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGAConfiguration.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGADebug.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGAEvents.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGAInput.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGASoftKeyboard.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGASoftKeyboardCallbacks.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGATypes.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UGAVersion.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UnityToGACallbacks.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UnityToGAConfigurationCallbacks.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UnityToGAKeyEventCallbacks.h
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/UnityToGAMotionEventCallbacks.h

@@ -1,0 +1,2 @@
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/CMakeLists.txt
+/Users/cocodowney/Desktop/Axis-XR-Monitoring/AxisXRMonitoring/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/CMakeLists.txt

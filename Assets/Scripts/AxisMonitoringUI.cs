@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 public class AxisMonitoringUI : MonoBehaviour
 {
-    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V4";
+    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V5";
 
     private static readonly Color PanelColor =
         new Color(0.025f, 0.032f, 0.045f, 0.97f);
@@ -40,12 +40,23 @@ public class AxisMonitoringUI : MonoBehaviour
     private enum OverviewMode
     {
         SpatialPriority,
-        Grid
+        List
     }
+
+    private enum ListFilter
+    {
+        All,
+        Attention,
+        Healthy
+    }
+
+    private const int ListRowsPerPage = 6;
 
     private OverviewMode _overviewMode =
         OverviewMode.SpatialPriority;
 
+    private ListFilter _listFilter = ListFilter.All;
+    private int _listPage;
     private CameraData[] _overviewCameras;
 
     private GameObject _hudRoot;
@@ -169,7 +180,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
     public void ShowOnboarding(int step)
     {
-        _onboardingStep = Mathf.Clamp(step, 0, 3);
+        _onboardingStep = Mathf.Clamp(step, 0, 2);
         DestroyTransientUi();
 
         if (_hudRoot != null)
@@ -177,33 +188,33 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _onboardingRoot = CreateHeadLockedPanel(
             "Onboarding",
-            new Vector2(700f, 430f),
+            new Vector2(680f, 390f),
             new Vector3(0f, 0f, 0.92f));
 
         CreateRect(
             _onboardingRoot.transform,
             "AccentLine",
-            new Vector2(700f, 5f),
+            new Vector2(680f, 5f),
             Vector2.zero,
             AccentColor);
 
         AddText(
             _onboardingRoot.transform,
             "AXIS XR MONITORING",
-            16,
+            15,
             FontStyle.Bold,
             AccentColor,
-            new Vector2(30f, -22f),
-            new Vector2(-150f, -46f));
+            new Vector2(28f, -20f),
+            new Vector2(-150f, -42f));
 
         AddText(
             _onboardingRoot.transform,
-            $"{_onboardingStep + 1} / 4",
-            15,
+            $"{_onboardingStep + 1} / 3",
+            14,
             FontStyle.Bold,
             TextSecondary,
-            new Vector2(580f, -22f),
-            new Vector2(-30f, -46f),
+            new Vector2(560f, -20f),
+            new Vector2(-28f, -42f),
             TextAnchor.UpperRight);
 
         switch (_onboardingStep)
@@ -211,268 +222,239 @@ public class AxisMonitoringUI : MonoBehaviour
             case 0:
                 AddText(
                     _onboardingRoot.transform,
-                    "Point. Pinch. Select.",
-                    32,
+                    "Find issues faster",
+                    31,
                     FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(30f, -66f),
-                    new Vector2(-30f, -108f));
+                    new Vector2(28f, -64f),
+                    new Vector2(-28f, -104f));
 
                 AddText(
                     _onboardingRoot.transform,
-                    "Use either hand to control a blue ray.",
-                    19,
+                    "In Spatial view, cameras that need attention move closer. Healthy cameras stay in the background.",
+                    18,
                     FontStyle.Normal,
                     TextSecondary,
-                    new Vector2(30f, -116f),
-                    new Vector2(-30f, -146f));
+                    new Vector2(28f, -116f),
+                    new Vector2(-28f, -166f));
 
-                GameObject pointRow = CreateRect(
+                GameObject near = CreateRect(
                     _onboardingRoot.transform,
-                    "PointRow",
-                    new Vector2(640f, 64f),
-                    new Vector2(0f, -180f),
+                    "NearExample",
+                    new Vector2(270f, 82f),
+                    new Vector2(-155f, -210f),
                     PanelSoftColor);
 
                 AddText(
-                    pointRow.transform,
-                    "1   POINT",
-                    19,
-                    FontStyle.Bold,
-                    AccentColor,
-                    new Vector2(18f, -18f),
-                    new Vector2(-430f, -46f));
-
-                AddText(
-                    pointRow.transform,
-                    "Aim the ray at a button or camera card.",
+                    near.transform,
+                    "■  ATTENTION",
                     18,
-                    FontStyle.Normal,
-                    TextPrimary,
-                    new Vector2(180f, -18f),
-                    new Vector2(-18f, -46f));
-
-                GameObject pinchRow = CreateRect(
-                    _onboardingRoot.transform,
-                    "PinchRow",
-                    new Vector2(640f, 64f),
-                    new Vector2(0f, -254f),
-                    PanelSoftColor);
-
-                AddText(
-                    pinchRow.transform,
-                    "2   PINCH",
-                    19,
                     FontStyle.Bold,
-                    AccentColor,
-                    new Vector2(18f, -18f),
-                    new Vector2(-430f, -46f));
+                    OfflineColor,
+                    new Vector2(18f, -16f),
+                    new Vector2(-18f, -42f));
 
                 AddText(
-                    pinchRow.transform,
-                    "Touch thumb + index finger to select.",
-                    18,
-                    FontStyle.Normal,
-                    TextPrimary,
-                    new Vector2(180f, -18f),
-                    new Vector2(-18f, -46f));
-
-                AddText(
-                    _onboardingRoot.transform,
-                    "Tip: keep your hand inside the headset cameras' view.",
+                    near.transform,
+                    "Closer · more prominent",
                     15,
                     FontStyle.Normal,
+                    TextPrimary,
+                    new Vector2(18f, -48f),
+                    new Vector2(-18f, -70f));
+
+                GameObject far = CreateRect(
+                    _onboardingRoot.transform,
+                    "FarExample",
+                    new Vector2(250f, 68f),
+                    new Vector2(165f, -224f),
+                    new Color(
+                        PanelSoftColor.r,
+                        PanelSoftColor.g,
+                        PanelSoftColor.b,
+                        0.72f));
+
+                AddText(
+                    far.transform,
+                    "●  HEALTHY",
+                    16,
+                    FontStyle.Bold,
+                    HealthyColor,
+                    new Vector2(16f, -14f),
+                    new Vector2(-16f, -38f));
+
+                AddText(
+                    far.transform,
+                    "Farther · quieter",
+                    14,
+                    FontStyle.Normal,
                     TextSecondary,
-                    new Vector2(30f, -326f),
-                    new Vector2(-30f, -350f),
-                    TextAnchor.UpperCenter);
+                    new Vector2(16f, -40f),
+                    new Vector2(-16f, -60f));
                 break;
 
             case 1:
                 AddText(
                     _onboardingRoot.transform,
-                    "Choose your overview",
-                    32,
+                    "Point and pinch",
+                    31,
                     FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(30f, -66f),
-                    new Vector2(-30f, -108f));
+                    new Vector2(28f, -64f),
+                    new Vector2(-28f, -104f));
 
                 AddText(
                     _onboardingRoot.transform,
-                    "You can switch modes at any time without reloading the camera data.",
-                    19,
+                    "Use either hand. Point the blue ray at an item, then pinch thumb and index finger to select.",
+                    18,
                     FontStyle.Normal,
                     TextSecondary,
-                    new Vector2(30f, -116f),
-                    new Vector2(-30f, -154f));
+                    new Vector2(28f, -116f),
+                    new Vector2(-28f, -166f));
 
-                GameObject spatialRow = CreateRect(
+                GameObject point = CreateRect(
                     _onboardingRoot.transform,
-                    "SpatialModeRow",
-                    new Vector2(640f, 78f),
-                    new Vector2(0f, -188f),
+                    "PointStep",
+                    new Vector2(610f, 58f),
+                    new Vector2(0f, -204f),
                     PanelSoftColor);
 
                 AddText(
-                    spatialRow.transform,
-                    "SPATIAL PRIORITY",
-                    19,
+                    point.transform,
+                    "1   POINT",
+                    18,
                     FontStyle.Bold,
                     AccentColor,
-                    new Vector2(18f, -14f),
-                    new Vector2(-330f, -42f));
+                    new Vector2(18f, -16f),
+                    new Vector2(-430f, -42f));
 
                 AddText(
-                    spatialRow.transform,
-                    "Default — abnormal cameras appear closer and larger.",
+                    point.transform,
+                    "Aim at a camera, row, or button.",
                     16,
                     FontStyle.Normal,
                     TextPrimary,
-                    new Vector2(18f, -44f),
-                    new Vector2(-18f, -68f));
+                    new Vector2(170f, -16f),
+                    new Vector2(-18f, -42f));
 
-                GameObject gridRow = CreateRect(
+                GameObject pinch = CreateRect(
                     _onboardingRoot.transform,
-                    "GridModeRow",
-                    new Vector2(640f, 78f),
-                    new Vector2(0f, -278f),
+                    "PinchStep",
+                    new Vector2(610f, 58f),
+                    new Vector2(0f, -274f),
                     PanelSoftColor);
 
                 AddText(
-                    gridRow.transform,
-                    "GRID",
-                    19,
+                    pinch.transform,
+                    "2   PINCH",
+                    18,
                     FontStyle.Bold,
-                    TextPrimary,
-                    new Vector2(18f, -14f),
-                    new Vector2(-500f, -42f));
+                    AccentColor,
+                    new Vector2(18f, -16f),
+                    new Vector2(-430f, -42f));
 
                 AddText(
-                    gridRow.transform,
-                    "Compact — all cameras use the same size and distance.",
+                    pinch.transform,
+                    "Pinch once to open details.",
                     16,
                     FontStyle.Normal,
-                    TextSecondary,
-                    new Vector2(18f, -44f),
-                    new Vector2(-18f, -68f));
-                break;
-
-            case 2:
-                AddText(
-                    _onboardingRoot.transform,
-                    "Read status at a glance",
-                    32,
-                    FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(30f, -66f),
-                    new Vector2(-30f, -108f));
-
-                AddText(
-                    _onboardingRoot.transform,
-                    "Status color stays consistent in both overview modes.",
-                    19,
-                    FontStyle.Normal,
-                    TextSecondary,
-                    new Vector2(30f, -116f),
-                    new Vector2(-30f, -146f));
-
-                AddStatusRow(
-                    _onboardingRoot.transform,
-                    "■  OFFLINE",
-                    "Inspect first",
-                    OfflineColor,
-                    -180f);
-
-                AddStatusRow(
-                    _onboardingRoot.transform,
-                    "▲  WARNING",
-                    "Check the affected resource",
-                    WarningColor,
-                    -246f);
-
-                AddStatusRow(
-                    _onboardingRoot.transform,
-                    "●  HEALTHY",
-                    "No action needed",
-                    HealthyColor,
-                    -312f);
+                    new Vector2(170f, -16f),
+                    new Vector2(-18f, -42f));
                 break;
 
             default:
                 AddText(
                     _onboardingRoot.transform,
-                    "Choose the fastest route",
-                    32,
+                    "Choose the view for the task",
+                    31,
                     FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(30f, -66f),
-                    new Vector2(-30f, -108f));
+                    new Vector2(28f, -64f),
+                    new Vector2(-28f, -104f));
 
                 AddText(
                     _onboardingRoot.transform,
-                    "Use Overview to compare cameras. Use QR when you are already at a physical camera.",
-                    19,
+                    "Spatial emphasizes urgency. List is the fast conventional view for many cameras.",
+                    18,
                     FontStyle.Normal,
                     TextSecondary,
-                    new Vector2(30f, -116f),
-                    new Vector2(-30f, -166f));
+                    new Vector2(28f, -116f),
+                    new Vector2(-28f, -166f));
 
-                GameObject overviewFlow = CreateRect(
+                GameObject spatial = CreateRect(
                     _onboardingRoot.transform,
-                    "OverviewFlow",
-                    new Vector2(640f, 72f),
-                    new Vector2(0f, -210f),
+                    "SpatialMode",
+                    new Vector2(610f, 58f),
+                    new Vector2(0f, -204f),
                     PanelSoftColor);
 
                 AddText(
-                    overviewFlow.transform,
-                    "OVERVIEW   →   CAMERA   →   DETAILS",
-                    19,
+                    spatial.transform,
+                    "SPATIAL",
+                    17,
                     FontStyle.Bold,
-                    TextPrimary,
-                    new Vector2(18f, -22f),
-                    new Vector2(-18f, -50f),
-                    TextAnchor.UpperCenter);
+                    AccentColor,
+                    new Vector2(18f, -16f),
+                    new Vector2(-430f, -42f));
 
-                GameObject qrFlow = CreateRect(
+                AddText(
+                    spatial.transform,
+                    "Depth shows priority.",
+                    16,
+                    FontStyle.Normal,
+                    TextPrimary,
+                    new Vector2(170f, -16f),
+                    new Vector2(-18f, -42f));
+
+                GameObject list = CreateRect(
                     _onboardingRoot.transform,
-                    "QrFlow",
-                    new Vector2(640f, 72f),
-                    new Vector2(0f, -294f),
+                    "ListMode",
+                    new Vector2(610f, 58f),
+                    new Vector2(0f, -274f),
                     PanelSoftColor);
 
                 AddText(
-                    qrFlow.transform,
-                    "QR SCAN   →   CAMERA DETAILS",
-                    19,
+                    list.transform,
+                    "LIST",
+                    17,
                     FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(18f, -22f),
-                    new Vector2(-18f, -50f),
-                    TextAnchor.UpperCenter);
+                    new Vector2(18f, -16f),
+                    new Vector2(-430f, -42f));
+
+                AddText(
+                    list.transform,
+                    "Counts, filters, and quick scanning.",
+                    16,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(170f, -16f),
+                    new Vector2(-18f, -42f));
                 break;
         }
 
         CreateButton(
             _onboardingRoot.transform,
             "Skip",
-            new Vector2(120f, 52f),
-            new Vector2(-245f, -368f),
+            new Vector2(112f, 48f),
+            new Vector2(-245f, -340f),
             FinishOnboarding,
             PanelSoftColor);
 
         string nextLabel =
-            _onboardingStep == 3 ? "Start" : "Next";
+            _onboardingStep == 2 ? "Start Monitoring" : "Next";
 
         CreateButton(
             _onboardingRoot.transform,
             nextLabel,
-            new Vector2(150f, 52f),
-            new Vector2(235f, -368f),
+            new Vector2(
+                _onboardingStep == 2 ? 190f : 130f,
+                48f),
+            new Vector2(220f, -340f),
             () =>
             {
-                if (_onboardingStep >= 3)
+                if (_onboardingStep >= 2)
                     FinishOnboarding();
                 else
                     ShowOnboarding(_onboardingStep + 1);
@@ -559,19 +541,62 @@ public class AxisMonitoringUI : MonoBehaviour
         _overviewCameras = cameras;
         Array.Sort(cameras, CompareCameraPriority);
 
-        if (_overviewMode == OverviewMode.Grid)
+        if (_overviewMode == OverviewMode.List)
         {
-            BuildGridOverview(cameras);
+            BuildListOverview(cameras);
             return;
         }
 
+        BuildSpatialOverview(cameras);
+    }
+
+    private void BuildSpatialOverview(CameraData[] cameras)
+    {
         _overviewRoot = new GameObject("SpatialOverview");
         _overviewRoot.transform.position = _camera.transform.position;
         _overviewRoot.transform.rotation = _camera.transform.rotation;
 
         _cards.Clear();
 
-        CreateOverviewTitle(_overviewRoot.transform);
+        int total = CountValidCameras(cameras);
+        int attention = CountAttentionCameras(cameras);
+        int healthy = total - attention;
+
+        GameObject summary =
+            CreateCanvas(
+                "SpatialSummary",
+                new Vector2(540f, 74f),
+                _overviewRoot.transform,
+                new Vector3(0f, 0.29f, 0.96f),
+                PanelSoftColor);
+
+        AddText(
+            summary.transform,
+            $"{total} Cameras",
+            23,
+            FontStyle.Bold,
+            TextPrimary,
+            new Vector2(20f, -14f),
+            new Vector2(-300f, -44f));
+
+        AddText(
+            summary.transform,
+            $"{healthy} Healthy  ·  {attention} Attention",
+            16,
+            FontStyle.Bold,
+            attention > 0 ? WarningColor : HealthyColor,
+            new Vector2(245f, -17f),
+            new Vector2(-20f, -43f),
+            TextAnchor.UpperRight);
+
+        AddText(
+            summary.transform,
+            "Closer = higher priority",
+            13,
+            FontStyle.Normal,
+            TextSecondary,
+            new Vector2(20f, -47f),
+            new Vector2(-20f, -66f));
 
         Dictionary<string, int> totals =
             new Dictionary<string, int>();
@@ -606,7 +631,7 @@ public class AxisMonitoringUI : MonoBehaviour
             int statusTotal = totals[status];
 
             CardVisual card =
-                CreateCameraCard(
+                CreateSpatialCameraLabel(
                     _overviewRoot.transform,
                     camera,
                     GetOverviewPosition(
@@ -618,84 +643,101 @@ public class AxisMonitoringUI : MonoBehaviour
         }
 
         CreateButtonCanvas(
-            "OverviewSpatialMode",
+            "SpatialMode",
             _overviewRoot.transform,
-            new Vector3(-0.12f, 0.20f, 0.90f),
-            new Vector2(200f, 52f),
+            new Vector3(-0.10f, 0.19f, 0.90f),
+            new Vector2(150f, 48f),
             "● Spatial",
             () => SetOverviewMode(
                 OverviewMode.SpatialPriority));
 
         CreateButtonCanvas(
-            "OverviewGridMode",
+            "ListMode",
             _overviewRoot.transform,
-            new Vector3(0.12f, 0.20f, 0.90f),
-            new Vector2(170f, 52f),
+            new Vector3(0.10f, 0.19f, 0.90f),
+            new Vector2(130f, 48f),
             "List",
             () => SetOverviewMode(
-                OverviewMode.Grid));
+                OverviewMode.List));
 
         CreateButtonCanvas(
             "OverviewClose",
             _overviewRoot.transform,
-            new Vector3(-0.13f, -0.27f, 0.88f),
-            new Vector2(132f, 58f),
+            new Vector3(-0.11f, -0.28f, 0.86f),
+            new Vector2(120f, 52f),
             "Close",
             CloseOverview);
 
         CreateButtonCanvas(
             "OverviewHelp",
             _overviewRoot.transform,
-            new Vector3(0.13f, -0.27f, 0.88f),
-            new Vector2(132f, 58f),
+            new Vector3(0.11f, -0.28f, 0.86f),
+            new Vector2(120f, 52f),
             "Help",
             () => ShowOnboarding(0));
     }
 
-    private void BuildGridOverview(CameraData[] cameras)
+    private void BuildListOverview(CameraData[] cameras)
     {
-        int cameraCount = 0;
+        List<CameraData> filtered =
+            GetFilteredCameras(cameras);
 
-        foreach (CameraData camera in cameras)
-        {
-            if (camera != null)
-                cameraCount++;
-        }
+        int total = CountValidCameras(cameras);
+        int attention = CountAttentionCameras(cameras);
+        int healthy = total - attention;
 
-        float rowHeight = 72f;
-        float panelHeight =
-            Mathf.Max(430f, 190f + cameraCount * rowHeight);
+        int pageCount =
+            Mathf.Max(
+                1,
+                Mathf.CeilToInt(
+                    filtered.Count /
+                    (float)ListRowsPerPage));
+
+        _listPage =
+            Mathf.Clamp(
+                _listPage,
+                0,
+                pageCount - 1);
 
         _overviewRoot = CreateHeadLockedPanel(
-            "GridOverview",
-            new Vector2(820f, panelHeight),
-            new Vector3(0f, 0f, 0.94f));
+            "ListOverview",
+            new Vector2(900f, 680f),
+            new Vector3(0f, 0f, 0.96f));
 
         _cards.Clear();
 
         AddText(
             _overviewRoot.transform,
-            "CAMERA OVERVIEW",
-            15,
+            "CAMERA MONITORING",
+            14,
             FontStyle.Bold,
             AccentColor,
             new Vector2(32f, -22f),
-            new Vector2(-560f, -46f));
+            new Vector2(-620f, -44f));
 
         AddText(
             _overviewRoot.transform,
-            "All cameras",
+            $"{total} Cameras",
             30,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(32f, -56f),
-            new Vector2(-400f, -96f));
+            new Vector2(32f, -52f),
+            new Vector2(-580f, -92f));
+
+        AddText(
+            _overviewRoot.transform,
+            $"{attention} Attention  ·  {healthy} Healthy",
+            18,
+            FontStyle.Bold,
+            attention > 0 ? WarningColor : HealthyColor,
+            new Vector2(310f, -60f),
+            new Vector2(-250f, -88f));
 
         CreateButton(
             _overviewRoot.transform,
             "Spatial",
-            new Vector2(130f, 48f),
-            new Vector2(225f, -42f),
+            new Vector2(120f, 44f),
+            new Vector2(305f, -28f),
             () => SetOverviewMode(
                 OverviewMode.SpatialPriority),
             PanelSoftColor);
@@ -703,78 +745,245 @@ public class AxisMonitoringUI : MonoBehaviour
         CreateButton(
             _overviewRoot.transform,
             "● List",
-            new Vector2(120f, 48f),
-            new Vector2(350f, -42f),
+            new Vector2(110f, 44f),
+            new Vector2(400f, -28f),
             () => SetOverviewMode(
-                OverviewMode.Grid),
+                OverviewMode.List),
             AccentColor);
+
+        CreateFilterButton(
+            "All",
+            $"{total}",
+            ListFilter.All,
+            -310f);
+
+        CreateFilterButton(
+            "Attention",
+            $"{attention}",
+            ListFilter.Attention,
+            -115f);
+
+        CreateFilterButton(
+            "Healthy",
+            $"{healthy}",
+            ListFilter.Healthy,
+            95f);
 
         AddText(
             _overviewRoot.transform,
             "CAMERA",
-            14,
+            13,
             FontStyle.Bold,
             TextSecondary,
-            new Vector2(34f, -118f),
-            new Vector2(-575f, -140f));
+            new Vector2(34f, -170f),
+            new Vector2(-700f, -190f));
 
         AddText(
             _overviewRoot.transform,
             "NAME",
-            14,
+            13,
             FontStyle.Bold,
             TextSecondary,
-            new Vector2(250f, -118f),
-            new Vector2(-330f, -140f));
+            new Vector2(205f, -170f),
+            new Vector2(-455f, -190f));
 
         AddText(
             _overviewRoot.transform,
             "STATUS",
-            14,
+            13,
             FontStyle.Bold,
             TextSecondary,
-            new Vector2(565f, -118f),
-            new Vector2(-34f, -140f),
+            new Vector2(450f, -170f),
+            new Vector2(-250f, -190f));
+
+        AddText(
+            _overviewRoot.transform,
+            "ISSUE",
+            13,
+            FontStyle.Bold,
+            TextSecondary,
+            new Vector2(650f, -170f),
+            new Vector2(-34f, -190f),
             TextAnchor.UpperRight);
 
-        int rowIndex = 0;
+        int start =
+            _listPage * ListRowsPerPage;
+
+        int end =
+            Mathf.Min(
+                start + ListRowsPerPage,
+                filtered.Count);
+
+        float rowTop = -202f;
+        float rowStep = 64f;
+
+        if (filtered.Count == 0)
+        {
+            AddText(
+                _overviewRoot.transform,
+                "No cameras match this filter.",
+                20,
+                FontStyle.Normal,
+                TextSecondary,
+                new Vector2(34f, -245f),
+                new Vector2(-34f, -285f),
+                TextAnchor.UpperCenter);
+        }
+        else
+        {
+            for (int i = start; i < end; i++)
+            {
+                CardVisual row =
+                    CreateListCameraRow(
+                        _overviewRoot.transform,
+                        filtered[i],
+                        rowTop -
+                        (i - start) * rowStep);
+
+                _cards.Add(row);
+            }
+        }
+
+        CreateButton(
+            _overviewRoot.transform,
+            "Close",
+            new Vector2(110f, 46f),
+            new Vector2(-385f, -620f),
+            CloseOverview,
+            PanelSoftColor);
+
+        if (pageCount > 1)
+        {
+            CreateButton(
+                _overviewRoot.transform,
+                "Prev",
+                new Vector2(100f, 46f),
+                new Vector2(250f, -620f),
+                () => ChangeListPage(-1),
+                PanelSoftColor);
+
+            CreateButton(
+                _overviewRoot.transform,
+                "Next",
+                new Vector2(100f, 46f),
+                new Vector2(365f, -620f),
+                () => ChangeListPage(1),
+                AccentColor);
+        }
+
+        AddText(
+            _overviewRoot.transform,
+            $"Page {_listPage + 1} / {pageCount}",
+            15,
+            FontStyle.Bold,
+            TextSecondary,
+            new Vector2(345f, -625f),
+            new Vector2(-345f, -650f),
+            TextAnchor.UpperCenter);
+    }
+
+    private void CreateFilterButton(
+        string label,
+        string count,
+        ListFilter filter,
+        float x)
+    {
+        bool selected =
+            _listFilter == filter;
+
+        string text =
+            selected
+                ? $"● {label}  {count}"
+                : $"{label}  {count}";
+
+        CreateButton(
+            _overviewRoot.transform,
+            text,
+            new Vector2(
+                filter == ListFilter.Attention
+                    ? 175f
+                    : 160f,
+                46f),
+            new Vector2(x, -118f),
+            () => SetListFilter(filter),
+            selected
+                ? AccentColor
+                : PanelSoftColor);
+    }
+
+    private void SetListFilter(
+        ListFilter filter)
+    {
+        if (_listFilter == filter)
+            return;
+
+        _listFilter = filter;
+        _listPage = 0;
+        RebuildCurrentOverview();
+    }
+
+    private void ChangeListPage(int delta)
+    {
+        _listPage += delta;
+        RebuildCurrentOverview();
+    }
+
+    private void RebuildCurrentOverview()
+    {
+        if (_overviewCameras == null ||
+            _overviewCameras.Length == 0)
+        {
+            return;
+        }
+
+        if (_overviewRoot != null)
+        {
+            Destroy(_overviewRoot);
+            _overviewRoot = null;
+        }
+
+        _cards.Clear();
+        BuildOverview(_overviewCameras);
+    }
+
+    private List<CameraData> GetFilteredCameras(
+        CameraData[] cameras)
+    {
+        List<CameraData> result =
+            new List<CameraData>();
 
         foreach (CameraData camera in cameras)
         {
             if (camera == null)
                 continue;
 
-            CardVisual row =
-                CreateGridCameraRow(
-                    _overviewRoot.transform,
-                    camera,
-                    -154f - rowIndex * rowHeight);
+            string status =
+                NormalizeStatus(camera.status);
 
-            _cards.Add(row);
-            rowIndex++;
+            bool isAttention =
+                status == "OFFLINE" ||
+                status == "WARNING";
+
+            if (_listFilter == ListFilter.Attention &&
+                !isAttention)
+            {
+                continue;
+            }
+
+            if (_listFilter == ListFilter.Healthy &&
+                status != "HEALTHY")
+            {
+                continue;
+            }
+
+            result.Add(camera);
         }
 
-        float buttonY =
-            -(panelHeight - 34f);
-
-        CreateButton(
-            _overviewRoot.transform,
-            "Close",
-            new Vector2(120f, 50f),
-            new Vector2(-320f, buttonY),
-            CloseOverview,
-            PanelSoftColor);
-
-        CreateButton(
-            _overviewRoot.transform,
-            "Help",
-            new Vector2(120f, 50f),
-            new Vector2(320f, buttonY),
-            () => ShowOnboarding(0),
-            PanelSoftColor);
+        result.Sort(CompareCameraPriority);
+        return result;
     }
 
-    private CardVisual CreateGridCameraRow(
+    private CardVisual CreateListCameraRow(
         Transform parent,
         CameraData camera,
         float top)
@@ -786,9 +995,13 @@ public class AxisMonitoringUI : MonoBehaviour
             CreateRect(
                 parent,
                 $"Row_{camera.cameraId}",
-                new Vector2(756f, 62f),
+                new Vector2(832f, 56f),
                 new Vector2(0f, top),
-                PanelSoftColor);
+                new Color(
+                    PanelSoftColor.r,
+                    PanelSoftColor.g,
+                    PanelSoftColor.b,
+                    0.82f));
 
         Image background =
             row.GetComponent<Image>();
@@ -796,36 +1009,47 @@ public class AxisMonitoringUI : MonoBehaviour
         CreateRect(
             row.transform,
             "StatusAccent",
-            new Vector2(6f, 62f),
-            new Vector2(-375f, 0f),
+            new Vector2(5f, 56f),
+            new Vector2(-413f, 0f),
             statusColor);
 
         AddText(
             row.transform,
             camera.cameraId,
-            19,
+            17,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(22f, -18f),
-            new Vector2(-545f, -46f));
+            new Vector2(18f, -16f),
+            new Vector2(-650f, -42f));
 
         AddText(
             row.transform,
             camera.name,
-            18,
+            16,
             FontStyle.Normal,
             TextPrimary,
-            new Vector2(240f, -18f),
-            new Vector2(-285f, -46f));
+            new Vector2(185f, -16f),
+            new Vector2(-405f, -42f));
 
         AddText(
             row.transform,
             StatusSymbol(status) + " " + status,
-            17,
+            15,
             FontStyle.Bold,
             statusColor,
-            new Vector2(530f, -18f),
-            new Vector2(-22f, -46f),
+            new Vector2(430f, -16f),
+            new Vector2(-205f, -42f));
+
+        AddText(
+            row.transform,
+            GetIssueSummary(camera),
+            15,
+            FontStyle.Normal,
+            status == "HEALTHY"
+                ? TextSecondary
+                : TextPrimary,
+            new Vector2(610f, -16f),
+            new Vector2(-18f, -42f),
             TextAnchor.UpperRight);
 
         XRClickable clickable =
@@ -833,8 +1057,8 @@ public class AxisMonitoringUI : MonoBehaviour
                 row,
                 background,
                 () => ShowDetails(camera),
-                PanelSoftColor,
-                new Color(0.12f, 0.20f, 0.28f, 0.98f));
+                background.color,
+                new Color(0.12f, 0.20f, 0.28f, 0.96f));
 
         return new CardVisual
         {
@@ -852,28 +1076,27 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _overviewMode = mode;
 
-        if (_overviewCameras == null ||
-            _overviewCameras.Length == 0)
-        {
-            return;
-        }
+        if (mode == OverviewMode.List)
+            _listPage = 0;
 
-        if (_overviewRoot != null)
-        {
-            Destroy(_overviewRoot);
-            _overviewRoot = null;
-        }
-
-        _cards.Clear();
-        BuildOverview(_overviewCameras);
+        RebuildCurrentOverview();
     }
 
     private static int CompareCameraPriority(
         CameraData a,
         CameraData b)
     {
-        return StatusRank(a?.status).CompareTo(
-            StatusRank(b?.status));
+        int rankCompare =
+            StatusRank(a?.status).CompareTo(
+                StatusRank(b?.status));
+
+        if (rankCompare != 0)
+            return rankCompare;
+
+        return string.Compare(
+            a?.cameraId,
+            b?.cameraId,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static int StatusRank(string status)
@@ -887,6 +1110,69 @@ public class AxisMonitoringUI : MonoBehaviour
             default:
                 return 2;
         }
+    }
+
+    private int CountValidCameras(
+        CameraData[] cameras)
+    {
+        int count = 0;
+
+        foreach (CameraData camera in cameras)
+        {
+            if (camera != null)
+                count++;
+        }
+
+        return count;
+    }
+
+    private int CountAttentionCameras(
+        CameraData[] cameras)
+    {
+        int count = 0;
+
+        foreach (CameraData camera in cameras)
+        {
+            if (camera == null)
+                continue;
+
+            string status =
+                NormalizeStatus(camera.status);
+
+            if (status == "OFFLINE" ||
+                status == "WARNING")
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private string GetIssueSummary(
+        CameraData camera)
+    {
+        string status =
+            NormalizeStatus(camera.status);
+
+        if (status == "OFFLINE")
+            return "No connection";
+
+        if (status == "WARNING")
+        {
+            if (camera.temperatureAvailable &&
+                camera.temperature >= 70f)
+            {
+                return $"Temp {camera.temperature:0} C";
+            }
+
+            if (!camera.storageHealthy)
+                return "Storage issue";
+
+            return "Attention";
+        }
+
+        return "—";
     }
 
     private static string NormalizeStatus(string status)
@@ -909,61 +1195,41 @@ public class AxisMonitoringUI : MonoBehaviour
         int index,
         int total)
     {
-        // Spatial-priority layout:
-        // problem rows are higher and physically closer;
-        // healthy cameras stay lower and farther away.
         switch (status)
         {
             case "OFFLINE":
                 return new Vector3(
-                    GetCenteredRowX(index, total, 0.38f),
-                    0.09f,
+                    -0.22f +
+                    GetCenteredRowX(
+                        index,
+                        total,
+                        0.34f),
+                    0.07f,
                     0.76f);
 
             case "WARNING":
                 return new Vector3(
-                    GetCenteredRowX(index, total, 0.36f),
+                    0.18f +
+                    GetCenteredRowX(
+                        index,
+                        total,
+                        0.33f),
                     -0.055f,
-                    0.90f);
+                    0.92f);
 
             default:
                 return new Vector3(
-                    GetCenteredRowX(index, total, 0.32f),
-                    -0.21f,
-                    1.10f);
+                    -0.04f +
+                    GetCenteredRowX(
+                        index,
+                        total,
+                        0.30f),
+                    -0.19f,
+                    1.12f);
         }
     }
 
-    private void CreateOverviewTitle(Transform parent)
-    {
-        GameObject titleCanvas =
-            CreateCanvas(
-                "OverviewTitle",
-                new Vector2(500f, 82f),
-                parent,
-                new Vector3(0f, 0.29f, 0.94f),
-                PanelSoftColor);
-
-        AddText(
-            titleCanvas.transform,
-            "CAMERA OVERVIEW",
-            15,
-            FontStyle.Bold,
-            AccentColor,
-            new Vector2(20f, -10f),
-            new Vector2(-20f, -30f));
-
-        AddText(
-            titleCanvas.transform,
-            "Abnormal cameras are closer",
-            23,
-            FontStyle.Bold,
-            TextPrimary,
-            new Vector2(20f, -35f),
-            new Vector2(-20f, -66f));
-    }
-
-    private CardVisual CreateCameraCard(
+    private CardVisual CreateSpatialCameraLabel(
         Transform parent,
         CameraData camera,
         Vector3 localPosition)
@@ -971,90 +1237,88 @@ public class AxisMonitoringUI : MonoBehaviour
         string status = NormalizeStatus(camera.status);
         Color statusColor = StatusColor(status);
 
-        Vector2 size =
-            status == "OFFLINE"
-                ? new Vector2(350f, 176f)
-                : status == "WARNING"
-                    ? new Vector2(330f, 166f)
-                    : new Vector2(290f, 148f);
+        bool healthy =
+            status == "HEALTHY";
 
-        GameObject card =
+        Vector2 size =
+            healthy
+                ? new Vector2(205f, 82f)
+                : new Vector2(245f, 112f);
+
+        Color normalColor =
+            healthy
+                ? new Color(
+                    PanelSoftColor.r,
+                    PanelSoftColor.g,
+                    PanelSoftColor.b,
+                    0.72f)
+                : new Color(
+                    PanelSoftColor.r,
+                    PanelSoftColor.g,
+                    PanelSoftColor.b,
+                    0.92f);
+
+        GameObject label =
             CreateCanvas(
-                $"Card_{camera.cameraId}",
+                $"Spatial_{camera.cameraId}",
                 size,
                 parent,
                 localPosition,
-                PanelColor);
+                normalColor);
 
         CanvasGroup group =
-            card.AddComponent<CanvasGroup>();
+            label.AddComponent<CanvasGroup>();
 
         Image background =
-            card.transform.Find("Background")
+            label.transform.Find("Background")
                 .GetComponent<Image>();
 
-        CreateRect(
-            card.transform,
-            "StatusBar",
-            new Vector2(size.x, 6f),
-            Vector2.zero,
-            statusColor);
-
-        string icon =
-            status == "OFFLINE"
-                ? "■"
-                : status == "WARNING"
-                    ? "▲"
-                    : "●";
-
         AddText(
-            card.transform,
+            label.transform,
             camera.cameraId,
-            status == "HEALTHY" ? 21 : 24,
+            healthy ? 18 : 21,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(18f, -18f),
-            new Vector2(-140f, -48f));
+            new Vector2(16f, -13f),
+            new Vector2(-16f, -40f));
 
         AddText(
-            card.transform,
-            $"{icon} {status}",
-            status == "HEALTHY" ? 14 : 16,
+            label.transform,
+            StatusSymbol(status) + " " +
+            (healthy
+                ? "Healthy"
+                : GetIssueSummary(camera)),
+            healthy ? 14 : 17,
             FontStyle.Bold,
             statusColor,
-            new Vector2(size.x * 0.50f, -20f),
-            new Vector2(-18f, -46f),
-            TextAnchor.UpperRight);
+            new Vector2(16f, -45f),
+            new Vector2(-16f, healthy ? -69f : -73f));
 
-        AddText(
-            card.transform,
-            camera.name,
-            status == "HEALTHY" ? 17 : 19,
-            FontStyle.Normal,
-            TextSecondary,
-            new Vector2(18f, -60f),
-            new Vector2(-18f, -92f));
-
-        AddText(
-            card.transform,
-            "PINCH TO INSPECT",
-            13,
-            FontStyle.Bold,
-            AccentColor,
-            new Vector2(18f, -(size.y - 44f)),
-            new Vector2(-18f, -(size.y - 20f)));
+        if (!healthy)
+        {
+            AddText(
+                label.transform,
+                status == "OFFLINE"
+                    ? "Offline"
+                    : "Needs attention",
+                13,
+                FontStyle.Normal,
+                TextSecondary,
+                new Vector2(16f, -79f),
+                new Vector2(-16f, -101f));
+        }
 
         XRClickable clickable =
             AddClickable(
-                card,
+                label,
                 background,
                 () => ShowDetails(camera),
-                PanelColor,
+                normalColor,
                 new Color(
-                    PanelColor.r + 0.08f,
-                    PanelColor.g + 0.08f,
-                    PanelColor.b + 0.10f,
-                    PanelColor.a));
+                    0.10f,
+                    0.16f,
+                    0.22f,
+                    0.96f));
 
         return new CardVisual
         {
@@ -1424,6 +1688,8 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _cards.Clear();
         _overviewCameras = null;
+        _listPage = 0;
+        _listFilter = ListFilter.All;
 
         if (_hudRoot != null)
             _hudRoot.SetActive(true);

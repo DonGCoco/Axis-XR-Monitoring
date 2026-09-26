@@ -13,11 +13,28 @@ public class XRPointerInteractor : MonoBehaviour
 
     public void Initialize()
     {
+        DisableComprehensiveRig();
         ResolveRigAndHands();
         RestoreBuildingBlockHandVisuals();
 
         if (_line == null)
             CreateLine();
+    }
+
+    private void DisableComprehensiveRig()
+    {
+        GameObject[] allObjects = FindObjectsByType<GameObject>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (GameObject obj in allObjects)
+        {
+            if (obj.name == "OVRComprehensiveInteractionRig" ||
+                obj.name == "OVRInteraction")
+            {
+                obj.SetActive(false);
+            }
+        }
     }
 
     private void ResolveRigAndHands()
@@ -48,26 +65,35 @@ public class XRPointerInteractor : MonoBehaviour
         if (handAnchor == null)
             return;
 
-        foreach (Renderer renderer in
-                 handAnchor.GetComponentsInChildren<Renderer>(true))
+        // The Comprehensive Rig wizard disables the old Hand Tracking
+        // Building Block visuals to avoid duplicate hands. We intentionally
+        // use the original Core SDK hand blocks for this project, so restore
+        // those objects and their renderer/data components explicitly.
+        foreach (Transform child in handAnchor.GetComponentsInChildren<Transform>(true))
         {
-            renderer.enabled = true;
+            if (child.name.StartsWith("[BuildingBlock] Hand Tracking"))
+                child.gameObject.SetActive(true);
         }
 
-        // The Comprehensive Interaction Rig wizard can disable the original
-        // Hand Tracking Building Block renderers to avoid duplicate hands.
-        // Re-enable those renderer behaviours so the existing Quest hand
-        // meshes remain visible while we use OVRHand directly for UI input.
         foreach (Behaviour behaviour in
                  handAnchor.GetComponentsInChildren<Behaviour>(true))
         {
             string typeName = behaviour.GetType().Name;
 
-            if (typeName == "OVRMeshRenderer" ||
+            if (typeName == "OVRHand" ||
+                typeName == "OVRSkeleton" ||
+                typeName == "OVRMesh" ||
+                typeName == "OVRMeshRenderer" ||
                 typeName == "OVRSkeletonRenderer")
             {
                 behaviour.enabled = true;
             }
+        }
+
+        foreach (Renderer renderer in
+                 handAnchor.GetComponentsInChildren<Renderer>(true))
+        {
+            renderer.enabled = true;
         }
     }
 
@@ -95,11 +121,14 @@ public class XRPointerInteractor : MonoBehaviour
     private void Update()
     {
         // Hands can become available a few frames after app startup.
-        if ((_rig == null || _rightHand == null) &&
-            Time.unscaledTime >= _nextResolveTime)
+        if (Time.unscaledTime >= _nextResolveTime)
         {
             _nextResolveTime = Time.unscaledTime + 0.5f;
-            ResolveRigAndHands();
+            DisableComprehensiveRig();
+
+            if (_rig == null || _rightHand == null)
+                ResolveRigAndHands();
+
             RestoreBuildingBlockHandVisuals();
         }
 

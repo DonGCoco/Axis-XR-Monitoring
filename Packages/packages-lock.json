@@ -27,6 +27,26 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.meta.xr.sdk.interaction": {
+      "version": "205.0.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.ugui": "1.0.0",
+        "com.unity.textmeshpro": "3.0.6"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.meta.xr.sdk.interaction.ovr": {
+      "version": "205.0.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.meta.xr.sdk.core": "205.0.0",
+        "com.meta.xr.sdk.interaction": "205.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
     "com.unity.ai.navigation": {
       "version": "2.0.14",
       "depth": 0,

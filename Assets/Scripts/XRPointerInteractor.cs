@@ -4,112 +4,88 @@ public class XRPointerInteractor : MonoBehaviour
 {
     [SerializeField] private float maxDistance = 5f;
 
-    private Transform _rayOrigin;
+    private OVRCameraRig _rig;
     private OVRHand _rightHand;
     private XRClickable _hovered;
     private LineRenderer _line;
-    private bool _usingHandRay;
     private bool _wasPinching;
+    private float _nextResolveTime;
 
     public void Initialize()
     {
-        ResolveInputSource();
+        ResolveRigAndHands();
+        RestoreBuildingBlockHandVisuals();
 
         if (_line == null)
             CreateLine();
     }
 
-    private void ResolveInputSource()
+    private void ResolveRigAndHands()
     {
-        // Prefer the Meta Interaction SDK HandRayInteractor that is configured
-        // under Hands/RightHand/HandInteractorsRight in the scene.
-        GameObject[] allObjects = FindObjectsByType<GameObject>(
-            FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
+        _rig = FindFirstObjectByType<OVRCameraRig>();
 
-        foreach (GameObject candidate in allObjects)
-        {
-            if (candidate.name != "HandRayInteractor")
-                continue;
-
-            Transform pointerPose = FindChildRecursive(
-                candidate.transform,
-                "PointerPose");
-
-            if (pointerPose != null)
-            {
-                _rayOrigin = pointerPose;
-                _usingHandRay = true;
-                break;
-            }
-        }
-
-        if (_usingHandRay)
-        {
-            OVRHand[] hands = FindObjectsByType<OVRHand>(
-                FindObjectsInactive.Include,
-                FindObjectsSortMode.None);
-
-            foreach (OVRHand hand in hands)
-            {
-                // The Core SDK 205 OVRHand API does not expose HandType
-                // publicly. The right-hand Building Block lives under
-                // RightHandAnchor, so use the hierarchy to identify it.
-                if (hand.transform.IsChildOf(
-                        FindFirstObjectByType<OVRCameraRig>()
-                            .rightHandAnchor))
-                {
-                    _rightHand = hand;
-                    break;
-                }
-            }
-
+        if (_rig == null)
             return;
+
+        if (_rig.rightHandAnchor != null)
+        {
+            _rightHand =
+                _rig.rightHandAnchor.GetComponentInChildren<OVRHand>(true);
         }
-
-        // Controller fallback keeps the existing desktop/device workflow usable.
-        OVRCameraRig rig = FindFirstObjectByType<OVRCameraRig>();
-
-        if (rig != null && rig.rightControllerAnchor != null)
-            _rayOrigin = rig.rightControllerAnchor;
-
-        if (_rayOrigin == null && Camera.main != null)
-            _rayOrigin = Camera.main.transform;
     }
 
-    private Transform FindChildRecursive(
-        Transform root,
-        string childName)
+    private void RestoreBuildingBlockHandVisuals()
     {
-        foreach (Transform child in root)
+        if (_rig == null)
+            return;
+
+        RestoreHandVisuals(_rig.leftHandAnchor);
+        RestoreHandVisuals(_rig.rightHandAnchor);
+    }
+
+    private void RestoreHandVisuals(Transform handAnchor)
+    {
+        if (handAnchor == null)
+            return;
+
+        foreach (Renderer renderer in
+                 handAnchor.GetComponentsInChildren<Renderer>(true))
         {
-            if (child.name == childName)
-                return child;
-
-            Transform result =
-                FindChildRecursive(child, childName);
-
-            if (result != null)
-                return result;
+            renderer.enabled = true;
         }
 
-        return null;
+        // The Comprehensive Interaction Rig wizard can disable the original
+        // Hand Tracking Building Block renderers to avoid duplicate hands.
+        // Re-enable those renderer behaviours so the existing Quest hand
+        // meshes remain visible while we use OVRHand directly for UI input.
+        foreach (Behaviour behaviour in
+                 handAnchor.GetComponentsInChildren<Behaviour>(true))
+        {
+            string typeName = behaviour.GetType().Name;
+
+            if (typeName == "OVRMeshRenderer" ||
+                typeName == "OVRSkeletonRenderer")
+            {
+                behaviour.enabled = true;
+            }
+        }
     }
 
     private void CreateLine()
     {
         _line = gameObject.AddComponent<LineRenderer>();
         _line.positionCount = 2;
-        _line.startWidth = 0.0025f;
+        _line.startWidth = 0.0035f;
         _line.endWidth = 0.0015f;
         _line.useWorldSpace = true;
 
         Shader shader = Shader.Find("Sprites/Default");
+
         if (shader != null)
         {
             Material material = new Material(shader);
             material.color =
-                new Color(0.75f, 0.9f, 1f, 0.75f);
+                new Color(0.75f, 0.9f, 1f, 0.9f);
             _line.material = material;
         }
 
@@ -118,16 +94,39 @@ public class XRPointerInteractor : MonoBehaviour
 
     private void Update()
     {
-        if (_rayOrigin == null)
+        // Hands can become available a few frames after app startup.
+        if ((_rig == null || _rightHand == null) &&
+            Time.unscaledTime >= _nextResolveTime)
         {
-            ResolveInputSource();
-
-            if (_rayOrigin == null)
-                return;
+            _nextResolveTime = Time.unscaledTime + 0.5f;
+            ResolveRigAndHands();
+            RestoreBuildingBlockHandVisuals();
         }
 
+        bool handRayValid =
+            _rightHand != null &&
+            _rightHand.isActiveAndEnabled &&
+            _rightHand.IsTracked &&
+            _rightHand.IsPointerPoseValid &&
+            _rightHand.PointerPose != null;
+
+        if (handRayValid)
+        {
+            UpdateHandRay();
+            return;
+        }
+
+        UpdateControllerFallback();
+    }
+
+    private void UpdateHandRay()
+    {
+        Transform pointerPose = _rightHand.PointerPose;
+
         Ray ray =
-            new Ray(_rayOrigin.position, _rayOrigin.forward);
+            new Ray(
+                pointerPose.position,
+                pointerPose.forward);
 
         bool hitSomething =
             Physics.Raycast(
@@ -138,77 +137,141 @@ public class XRPointerInteractor : MonoBehaviour
         XRClickable nextHovered = null;
 
         if (hitSomething)
+        {
             nextHovered =
                 hit.collider.GetComponent<XRClickable>();
-
-        if (_hovered != nextHovered)
-        {
-            if (_hovered != null)
-                _hovered.SetHovered(false);
-
-            _hovered = nextHovered;
-
-            if (_hovered != null)
-                _hovered.SetHovered(true);
         }
 
-        bool selectDown;
+        UpdateHover(nextHovered);
 
-        if (_usingHandRay && _rightHand != null)
-        {
-            bool pinching =
-                _rightHand.GetFingerIsPinching(
-                    OVRHand.HandFinger.Index);
+        bool pinching =
+            _rightHand.GetFingerIsPinching(
+                OVRHand.HandFinger.Index);
 
-            selectDown = pinching && !_wasPinching;
-            _wasPinching = pinching;
-        }
-        else
-        {
-            selectDown =
-                OVRInput.GetDown(
-                    OVRInput.Button.PrimaryIndexTrigger,
-                    OVRInput.Controller.RTouch);
-        }
+        bool pinchDown =
+            pinching && !_wasPinching;
 
-        if (selectDown && _hovered != null)
+        _wasPinching = pinching;
+
+        if (pinchDown && _hovered != null)
             _hovered.InvokeClick();
 
-        // Meta's HandRayInteractor renders its own ray. Keep the old line
-        // only for the controller fallback.
         if (_line != null)
         {
-            if (_usingHandRay)
-            {
+            _line.enabled = true;
+
+            float distance =
+                hitSomething
+                    ? hit.distance
+                    : maxDistance;
+
+            _line.SetPosition(
+                0,
+                pointerPose.position);
+
+            _line.SetPosition(
+                1,
+                pointerPose.position
+                + pointerPose.forward * distance);
+        }
+    }
+
+    private void UpdateControllerFallback()
+    {
+        _wasPinching = false;
+
+        if (_rig == null ||
+            _rig.rightControllerAnchor == null)
+        {
+            ClearHover();
+
+            if (_line != null)
                 _line.enabled = false;
-            }
-            else
+
+            return;
+        }
+
+        Transform origin =
+            _rig.rightControllerAnchor;
+
+        Ray ray =
+            new Ray(
+                origin.position,
+                origin.forward);
+
+        bool hitSomething =
+            Physics.Raycast(
+                ray,
+                out RaycastHit hit,
+                maxDistance);
+
+        XRClickable nextHovered = null;
+
+        if (hitSomething)
+        {
+            nextHovered =
+                hit.collider.GetComponent<XRClickable>();
+        }
+
+        UpdateHover(nextHovered);
+
+        bool triggerDown =
+            OVRInput.GetDown(
+                OVRInput.Button.PrimaryIndexTrigger,
+                OVRInput.Controller.RTouch);
+
+        if (triggerDown && _hovered != null)
+            _hovered.InvokeClick();
+
+        if (_line != null)
+        {
+            bool triggerTouched =
+                OVRInput.Get(
+                    OVRInput.Button.PrimaryIndexTrigger,
+                    OVRInput.Controller.RTouch);
+
+            _line.enabled =
+                _hovered != null || triggerTouched;
+
+            if (_line.enabled)
             {
-                bool triggerTouched =
-                    OVRInput.Get(
-                        OVRInput.Button.PrimaryIndexTrigger,
-                        OVRInput.Controller.RTouch);
+                float distance =
+                    hitSomething
+                        ? hit.distance
+                        : maxDistance;
 
-                _line.enabled =
-                    _hovered != null || triggerTouched;
+                _line.SetPosition(
+                    0,
+                    origin.position);
 
-                if (_line.enabled)
-                {
-                    float distance =
-                        hitSomething
-                            ? hit.distance
-                            : maxDistance;
-
-                    _line.SetPosition(
-                        0,
-                        _rayOrigin.position);
-
-                    _line.SetPosition(
-                        1,
-                        _rayOrigin.position
-                        + _rayOrigin.forward * distance);
-                }
+                _line.SetPosition(
+                    1,
+                    origin.position
+                    + origin.forward * distance);
             }
+        }
+    }
+
+    private void UpdateHover(XRClickable nextHovered)
+    {
+        if (_hovered == nextHovered)
+            return;
+
+        if (_hovered != null)
+            _hovered.SetHovered(false);
+
+        _hovered = nextHovered;
+
+        if (_hovered != null)
+            _hovered.SetHovered(true);
+    }
+
+    private void ClearHover()
+    {
+        if (_hovered != null)
+        {
+            _hovered.SetHovered(false);
+            _hovered = null;
         }
     }
 }

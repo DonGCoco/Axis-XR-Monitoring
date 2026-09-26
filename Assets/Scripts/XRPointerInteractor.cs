@@ -8,6 +8,17 @@ public class XRPointerInteractor : MonoBehaviour
     private OVRCameraRig _rig;
     private OVRHand _leftHand;
     private OVRHand _rightHand;
+    private OVRSkeleton _leftSkeleton;
+    private OVRSkeleton _rightSkeleton;
+    private Transform _leftIndexDistal;
+    private Transform _leftIndexTip;
+    private Transform _rightIndexDistal;
+    private Transform _rightIndexTip;
+
+    private Vector3 _leftRayDirection;
+    private Vector3 _rightRayDirection;
+    private bool _leftRayDirectionValid;
+    private bool _rightRayDirectionValid;
 
     private XRClickable _leftHovered;
     private XRClickable _rightHovered;
@@ -71,6 +82,86 @@ public class XRPointerInteractor : MonoBehaviour
             _rightHand =
                 _rig.rightHandAnchor.GetComponentInChildren<OVRHand>(true);
         }
+
+        ResolveIndexFingerBones(
+            _leftHand,
+            ref _leftSkeleton,
+            ref _leftIndexDistal,
+            ref _leftIndexTip);
+
+        ResolveIndexFingerBones(
+            _rightHand,
+            ref _rightSkeleton,
+            ref _rightIndexDistal,
+            ref _rightIndexTip);
+    }
+
+    private void ResolveIndexFingerBones(
+        OVRHand hand,
+        ref OVRSkeleton skeleton,
+        ref Transform indexDistal,
+        ref Transform indexTip)
+    {
+        if (hand == null)
+            return;
+
+        if (skeleton == null)
+        {
+            skeleton = hand.GetComponent<OVRSkeleton>();
+
+            if (skeleton == null)
+                skeleton = hand.GetComponentInChildren<OVRSkeleton>(true);
+
+            if (skeleton == null)
+                skeleton = hand.GetComponentInParent<OVRSkeleton>();
+        }
+
+        if (skeleton == null || skeleton.Bones == null)
+            return;
+
+        // This project uses the OpenXR hand skeleton. Prefer the XR bone IDs,
+        // then fall back to the legacy OVR hand IDs if needed.
+        indexDistal =
+            FindBoneTransform(
+                skeleton,
+                OVRSkeleton.BoneId.XRHand_IndexDistal);
+
+        indexTip =
+            FindBoneTransform(
+                skeleton,
+                OVRSkeleton.BoneId.XRHand_IndexTip);
+
+        if (indexDistal == null)
+        {
+            indexDistal =
+                FindBoneTransform(
+                    skeleton,
+                    OVRSkeleton.BoneId.Hand_Index3);
+        }
+
+        if (indexTip == null)
+        {
+            indexTip =
+                FindBoneTransform(
+                    skeleton,
+                    OVRSkeleton.BoneId.Hand_IndexTip);
+        }
+    }
+
+    private Transform FindBoneTransform(
+        OVRSkeleton skeleton,
+        OVRSkeleton.BoneId id)
+    {
+        if (skeleton == null || skeleton.Bones == null)
+            return null;
+
+        foreach (OVRBone bone in skeleton.Bones)
+        {
+            if (bone.Id == id)
+                return bone.Transform;
+        }
+
+        return null;
     }
 
     private void RestoreBuildingBlockHandVisuals()
@@ -156,12 +247,43 @@ public class XRPointerInteractor : MonoBehaviour
             {
                 ResolveRigAndHands();
             }
+            else
+            {
+                if (_leftIndexDistal == null ||
+                    _leftIndexTip == null)
+                {
+                    ResolveIndexFingerBones(
+                        _leftHand,
+                        ref _leftSkeleton,
+                        ref _leftIndexDistal,
+                        ref _leftIndexTip);
+                }
+
+                if (_rightIndexDistal == null ||
+                    _rightIndexTip == null)
+                {
+                    ResolveIndexFingerBones(
+                        _rightHand,
+                        ref _rightSkeleton,
+                        ref _rightIndexDistal,
+                        ref _rightIndexTip);
+                }
+            }
 
             RestoreBuildingBlockHandVisuals();
         }
 
-        bool leftValid = IsHandRayValid(_leftHand);
-        bool rightValid = IsHandRayValid(_rightHand);
+        bool leftValid =
+            IsHandRayValid(
+                _leftHand,
+                _leftIndexDistal,
+                _leftIndexTip);
+
+        bool rightValid =
+            IsHandRayValid(
+                _rightHand,
+                _rightIndexDistal,
+                _rightIndexTip);
 
         XRClickable newLeftHovered = null;
         XRClickable newRightHovered = null;
@@ -175,8 +297,12 @@ public class XRPointerInteractor : MonoBehaviour
             newLeftHovered =
                 UpdateHandRay(
                     _leftHand,
+                    _leftIndexDistal,
+                    _leftIndexTip,
                     _leftLine,
                     ref _leftWasPinching,
+                    ref _leftRayDirection,
+                    ref _leftRayDirectionValid,
                     out leftPinchDown);
         }
         else
@@ -192,8 +318,12 @@ public class XRPointerInteractor : MonoBehaviour
             newRightHovered =
                 UpdateHandRay(
                     _rightHand,
+                    _rightIndexDistal,
+                    _rightIndexTip,
                     _rightLine,
                     ref _rightWasPinching,
+                    ref _rightRayDirection,
+                    ref _rightRayDirectionValid,
                     out rightPinchDown);
         }
         else
@@ -232,27 +362,79 @@ public class XRPointerInteractor : MonoBehaviour
         }
     }
 
-    private bool IsHandRayValid(OVRHand hand)
+    private bool IsHandRayValid(
+        OVRHand hand,
+        Transform indexDistal,
+        Transform indexTip)
     {
-        return hand != null &&
-               hand.isActiveAndEnabled &&
-               hand.IsTracked &&
-               hand.IsPointerPoseValid &&
-               hand.PointerPose != null;
+        if (hand == null ||
+            !hand.isActiveAndEnabled ||
+            !hand.IsTracked)
+        {
+            return false;
+        }
+
+        bool fingerRayAvailable =
+            indexDistal != null &&
+            indexTip != null;
+
+        bool pointerFallbackAvailable =
+            hand.IsPointerPoseValid &&
+            hand.PointerPose != null;
+
+        return fingerRayAvailable ||
+               pointerFallbackAvailable;
     }
 
     private XRClickable UpdateHandRay(
         OVRHand hand,
+        Transform indexDistal,
+        Transform indexTip,
         LineRenderer line,
         ref bool wasPinching,
+        ref Vector3 smoothedDirection,
+        ref bool smoothedDirectionValid,
         out bool pinchDown)
     {
-        Transform pointerPose = hand.PointerPose;
+        Vector3 origin;
+        Vector3 rawDirection;
+
+        bool hasFingerRay =
+            TryGetIndexFingerRay(
+                indexDistal,
+                indexTip,
+                out origin,
+                out rawDirection);
+
+        if (!hasFingerRay)
+        {
+            Transform pointerPose = hand.PointerPose;
+            origin = pointerPose.position;
+            rawDirection = pointerPose.forward;
+        }
+
+        if (!smoothedDirectionValid)
+        {
+            smoothedDirection = rawDirection;
+            smoothedDirectionValid = true;
+        }
+        else
+        {
+            float blend =
+                1f - Mathf.Exp(
+                    -18f * Time.unscaledDeltaTime);
+
+            smoothedDirection =
+                Vector3.Slerp(
+                    smoothedDirection,
+                    rawDirection,
+                    blend).normalized;
+        }
 
         Ray ray =
             new Ray(
-                pointerPose.position,
-                pointerPose.forward);
+                origin,
+                smoothedDirection);
 
         bool hitSomething =
             Physics.Raycast(
@@ -288,15 +470,48 @@ public class XRPointerInteractor : MonoBehaviour
 
             line.SetPosition(
                 0,
-                pointerPose.position);
+                origin);
 
             line.SetPosition(
                 1,
-                pointerPose.position
-                + pointerPose.forward * distance);
+                origin
+                + smoothedDirection * distance);
         }
 
         return hovered;
+    }
+
+    private bool TryGetIndexFingerRay(
+        Transform indexDistal,
+        Transform indexTip,
+        out Vector3 origin,
+        out Vector3 direction)
+    {
+        origin = Vector3.zero;
+        direction = Vector3.forward;
+
+        if (indexDistal == null ||
+            indexTip == null)
+        {
+            return false;
+        }
+
+        Vector3 fingerVector =
+            indexTip.position -
+            indexDistal.position;
+
+        if (fingerVector.sqrMagnitude < 0.000001f)
+            return false;
+
+        direction = fingerVector.normalized;
+
+        // Start just beyond the fingertip so the ray visually comes out of
+        // the index finger and does not intersect the hand mesh itself.
+        origin =
+            indexTip.position +
+            direction * 0.006f;
+
+        return true;
     }
 
     private XRClickable UpdateControllerFallback()

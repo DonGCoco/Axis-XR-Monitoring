@@ -36,6 +36,15 @@ public class XRClickable : MonoBehaviour
             return;
 
         _hovered = hovered;
+
+        if (!_pressed)
+        {
+            transform.localScale =
+                _hovered
+                    ? _normalScale * 1.04f
+                    : _normalScale;
+        }
+
         ApplyColor();
     }
 
@@ -57,7 +66,10 @@ public class XRClickable : MonoBehaviour
         yield return new WaitForSecondsRealtime(0.09f);
 
         _pressed = false;
-        transform.localScale = _normalScale;
+        transform.localScale =
+            _hovered
+                ? _normalScale * 1.04f
+                : _normalScale;
         ApplyColor();
         _pressRoutine = null;
     }

@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 public class AxisMonitoringUI : MonoBehaviour
 {
-    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V3";
+    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V4";
 
     private static readonly Color PanelColor =
         new Color(0.025f, 0.032f, 0.045f, 0.97f);
@@ -36,6 +36,17 @@ public class AxisMonitoringUI : MonoBehaviour
     private Camera _camera;
     private bool _initialized;
     private int _onboardingStep;
+
+    private enum OverviewMode
+    {
+        SpatialPriority,
+        Grid
+    }
+
+    private OverviewMode _overviewMode =
+        OverviewMode.SpatialPriority;
+
+    private CameraData[] _overviewCameras;
 
     private GameObject _hudRoot;
     private GameObject _onboardingRoot;
@@ -158,7 +169,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
     public void ShowOnboarding(int step)
     {
-        _onboardingStep = Mathf.Clamp(step, 0, 2);
+        _onboardingStep = Mathf.Clamp(step, 0, 3);
         DestroyTransientUi();
 
         if (_hudRoot != null)
@@ -166,7 +177,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _onboardingRoot = CreateHeadLockedPanel(
             "Onboarding",
-            new Vector2(700f, 420f),
+            new Vector2(700f, 430f),
             new Vector3(0f, 0f, 0.92f));
 
         CreateRect(
@@ -187,7 +198,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
         AddText(
             _onboardingRoot.transform,
-            $"{_onboardingStep + 1} / 3",
+            $"{_onboardingStep + 1} / 4",
             15,
             FontStyle.Bold,
             TextSecondary,
@@ -209,7 +220,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
                 AddText(
                     _onboardingRoot.transform,
-                    "Use your right hand to control the blue ray.",
+                    "Use either hand to control a blue ray.",
                     19,
                     FontStyle.Normal,
                     TextSecondary,
@@ -280,6 +291,76 @@ public class AxisMonitoringUI : MonoBehaviour
             case 1:
                 AddText(
                     _onboardingRoot.transform,
+                    "Choose your overview",
+                    32,
+                    FontStyle.Bold,
+                    TextPrimary,
+                    new Vector2(30f, -66f),
+                    new Vector2(-30f, -108f));
+
+                AddText(
+                    _onboardingRoot.transform,
+                    "You can switch modes at any time without reloading the camera data.",
+                    19,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(30f, -116f),
+                    new Vector2(-30f, -154f));
+
+                GameObject spatialRow = CreateRect(
+                    _onboardingRoot.transform,
+                    "SpatialModeRow",
+                    new Vector2(640f, 78f),
+                    new Vector2(0f, -188f),
+                    PanelSoftColor);
+
+                AddText(
+                    spatialRow.transform,
+                    "SPATIAL PRIORITY",
+                    19,
+                    FontStyle.Bold,
+                    AccentColor,
+                    new Vector2(18f, -14f),
+                    new Vector2(-330f, -42f));
+
+                AddText(
+                    spatialRow.transform,
+                    "Default — abnormal cameras appear closer and larger.",
+                    16,
+                    FontStyle.Normal,
+                    TextPrimary,
+                    new Vector2(18f, -44f),
+                    new Vector2(-18f, -68f));
+
+                GameObject gridRow = CreateRect(
+                    _onboardingRoot.transform,
+                    "GridModeRow",
+                    new Vector2(640f, 78f),
+                    new Vector2(0f, -278f),
+                    PanelSoftColor);
+
+                AddText(
+                    gridRow.transform,
+                    "GRID",
+                    19,
+                    FontStyle.Bold,
+                    TextPrimary,
+                    new Vector2(18f, -14f),
+                    new Vector2(-500f, -42f));
+
+                AddText(
+                    gridRow.transform,
+                    "Compact — all cameras use the same size and distance.",
+                    16,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(18f, -44f),
+                    new Vector2(-18f, -68f));
+                break;
+
+            case 2:
+                AddText(
+                    _onboardingRoot.transform,
                     "Read status at a glance",
                     32,
                     FontStyle.Bold,
@@ -289,7 +370,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
                 AddText(
                     _onboardingRoot.transform,
-                    "Abnormal cameras appear first in the overview.",
+                    "Status color stays consistent in both overview modes.",
                     19,
                     FontStyle.Normal,
                     TextSecondary,
@@ -377,21 +458,21 @@ public class AxisMonitoringUI : MonoBehaviour
             _onboardingRoot.transform,
             "Skip",
             new Vector2(120f, 52f),
-            new Vector2(-245f, -358f),
+            new Vector2(-245f, -368f),
             FinishOnboarding,
             PanelSoftColor);
 
         string nextLabel =
-            _onboardingStep == 2 ? "Start" : "Next";
+            _onboardingStep == 3 ? "Start" : "Next";
 
         CreateButton(
             _onboardingRoot.transform,
             nextLabel,
             new Vector2(150f, 52f),
-            new Vector2(235f, -358f),
+            new Vector2(235f, -368f),
             () =>
             {
-                if (_onboardingStep >= 2)
+                if (_onboardingStep >= 3)
                     FinishOnboarding();
                 else
                     ShowOnboarding(_onboardingStep + 1);
@@ -475,9 +556,13 @@ public class AxisMonitoringUI : MonoBehaviour
             return;
         }
 
+        _overviewCameras = cameras;
         Array.Sort(cameras, CompareCameraPriority);
 
-        _overviewRoot = new GameObject("SpatialOverview");
+        _overviewRoot = new GameObject(
+            _overviewMode == OverviewMode.SpatialPriority
+                ? "SpatialOverview"
+                : "GridOverview");
         _overviewRoot.transform.position = _camera.transform.position;
         _overviewRoot.transform.rotation = _camera.transform.rotation;
 
@@ -500,14 +585,41 @@ public class AxisMonitoringUI : MonoBehaviour
 
             int statusIndex = counts[status]++;
 
+            Vector3 localPosition =
+                _overviewMode == OverviewMode.SpatialPriority
+                    ? GetOverviewPosition(status, statusIndex)
+                    : GetOverviewGridPosition(_cards.Count);
+
             CardVisual card =
                 CreateCameraCard(
                     _overviewRoot.transform,
                     camera,
-                    GetOverviewPosition(status, statusIndex));
+                    localPosition);
 
             _cards.Add(card);
         }
+
+        CreateButtonCanvas(
+            "OverviewSpatialMode",
+            _overviewRoot.transform,
+            new Vector3(-0.12f, 0.20f, 0.90f),
+            new Vector2(200f, 52f),
+            _overviewMode == OverviewMode.SpatialPriority
+                ? "● Spatial"
+                : "Spatial",
+            () => SetOverviewMode(
+                OverviewMode.SpatialPriority));
+
+        CreateButtonCanvas(
+            "OverviewGridMode",
+            _overviewRoot.transform,
+            new Vector3(0.12f, 0.20f, 0.90f),
+            new Vector2(170f, 52f),
+            _overviewMode == OverviewMode.Grid
+                ? "● Grid"
+                : "Grid",
+            () => SetOverviewMode(
+                OverviewMode.Grid));
 
         CreateButtonCanvas(
             "OverviewClose",
@@ -524,6 +636,30 @@ public class AxisMonitoringUI : MonoBehaviour
             new Vector2(132f, 58f),
             "Help",
             () => ShowOnboarding(0));
+    }
+
+    private void SetOverviewMode(
+        OverviewMode mode)
+    {
+        if (_overviewMode == mode)
+            return;
+
+        _overviewMode = mode;
+
+        if (_overviewCameras == null ||
+            _overviewCameras.Length == 0)
+        {
+            return;
+        }
+
+        if (_overviewRoot != null)
+        {
+            Destroy(_overviewRoot);
+            _overviewRoot = null;
+        }
+
+        _cards.Clear();
+        BuildOverview(_overviewCameras);
     }
 
     private static int CompareCameraPriority(
@@ -586,6 +722,20 @@ public class AxisMonitoringUI : MonoBehaviour
         }
     }
 
+    private Vector3 GetOverviewGridPosition(int index)
+    {
+        int column = index % 3;
+        int row = index / 3;
+
+        float x = (column - 1) * 0.34f;
+        float y = 0.015f - row * 0.19f;
+
+        return new Vector3(
+            x,
+            y,
+            0.96f);
+    }
+
     private void CreateOverviewTitle(Transform parent)
     {
         GameObject titleCanvas =
@@ -607,7 +757,9 @@ public class AxisMonitoringUI : MonoBehaviour
 
         AddText(
             titleCanvas.transform,
-            "Abnormal cameras are closer",
+            _overviewMode == OverviewMode.SpatialPriority
+                ? "Abnormal cameras are closer"
+                : "All cameras at equal distance",
             23,
             FontStyle.Bold,
             TextPrimary,
@@ -623,12 +775,21 @@ public class AxisMonitoringUI : MonoBehaviour
         string status = NormalizeStatus(camera.status);
         Color statusColor = StatusColor(status);
 
-        Vector2 size =
-            status == "OFFLINE"
-                ? new Vector2(350f, 176f)
-                : status == "WARNING"
-                    ? new Vector2(330f, 166f)
-                    : new Vector2(290f, 148f);
+        Vector2 size;
+
+        if (_overviewMode == OverviewMode.Grid)
+        {
+            size = new Vector2(310f, 160f);
+        }
+        else
+        {
+            size =
+                status == "OFFLINE"
+                    ? new Vector2(350f, 176f)
+                    : status == "WARNING"
+                        ? new Vector2(330f, 166f)
+                        : new Vector2(290f, 148f);
+        }
 
         GameObject card =
             CreateCanvas(
@@ -662,7 +823,9 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             camera.cameraId,
-            status == "HEALTHY" ? 21 : 24,
+            _overviewMode == OverviewMode.Grid
+                ? 22
+                : status == "HEALTHY" ? 21 : 24,
             FontStyle.Bold,
             TextPrimary,
             new Vector2(18f, -18f),
@@ -671,7 +834,9 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             $"{icon} {status}",
-            status == "HEALTHY" ? 14 : 16,
+            _overviewMode == OverviewMode.Grid
+                ? 15
+                : status == "HEALTHY" ? 14 : 16,
             FontStyle.Bold,
             statusColor,
             new Vector2(size.x * 0.50f, -20f),
@@ -681,7 +846,9 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             camera.name,
-            status == "HEALTHY" ? 17 : 19,
+            _overviewMode == OverviewMode.Grid
+                ? 18
+                : status == "HEALTHY" ? 17 : 19,
             FontStyle.Normal,
             TextSecondary,
             new Vector2(18f, -60f),
@@ -1075,6 +1242,7 @@ public class AxisMonitoringUI : MonoBehaviour
         }
 
         _cards.Clear();
+        _overviewCameras = null;
 
         if (_hudRoot != null)
             _hudRoot.SetActive(true);

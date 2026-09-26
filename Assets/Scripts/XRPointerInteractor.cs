@@ -560,9 +560,12 @@ public class XRPointerInteractor : MonoBehaviour
             return false;
         }
 
+        // In the OpenXR hand skeleton used by this project, the distal/tip
+        // transform ordering is opposite to the visual pointing direction.
+        // Flip the vector so the rendered ray follows the visible index finger.
         Vector3 fingerVector =
-            indexTip.position -
-            indexDistal.position;
+            indexDistal.position -
+            indexTip.position;
 
         if (fingerVector.sqrMagnitude < 0.000001f)
             return false;

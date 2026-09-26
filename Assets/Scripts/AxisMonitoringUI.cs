@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 public class AxisMonitoringUI : MonoBehaviour
 {
-    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V1";
+    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V2";
 
     private static readonly Color PanelColor =
         new Color(0.035f, 0.045f, 0.06f, 0.94f);
@@ -122,7 +122,7 @@ public class AxisMonitoringUI : MonoBehaviour
             "OverviewButton",
             _hudRoot.transform,
             new Vector3(-0.27f, -0.22f, 0.78f),
-            new Vector2(230f, 68f),
+            new Vector2(250f, 72f),
             "Overview",
             () =>
             {
@@ -139,7 +139,7 @@ public class AxisMonitoringUI : MonoBehaviour
             "HelpButton",
             _hudRoot.transform,
             new Vector3(0.28f, -0.22f, 0.78f),
-            new Vector2(86f, 68f),
+            new Vector2(76f, 72f),
             "?",
             () => ShowOnboarding(0));
 
@@ -166,106 +166,286 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _onboardingRoot = CreateHeadLockedPanel(
             "Onboarding",
-            new Vector2(700f, 430f),
-            new Vector3(0f, 0f, 0.9f));
+            new Vector2(760f, 480f),
+            new Vector3(0f, 0f, 0.92f));
+
+        AddText(
+            _onboardingRoot.transform,
+            "AXIS XR MONITORING",
+            18,
+            FontStyle.Bold,
+            AccentColor,
+            new Vector2(34f, -24f),
+            new Vector2(-170f, -52f));
+
+        AddText(
+            _onboardingRoot.transform,
+            $"{_onboardingStep + 1} / 3",
+            16,
+            FontStyle.Bold,
+            TextSecondary,
+            new Vector2(620f, -25f),
+            new Vector2(-34f, -52f),
+            TextAnchor.UpperRight);
 
         switch (_onboardingStep)
         {
             case 0:
                 AddText(
                     _onboardingRoot.transform,
-                    "Axis XR Monitoring",
-                    38,
+                    "Use your hand to interact",
+                    34,
                     FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(36f, -32f),
-                    new Vector2(-36f, -95f));
+                    new Vector2(34f, -72f),
+                    new Vector2(-34f, -118f));
 
                 AddText(
                     _onboardingRoot.transform,
-                    "Find camera problems without losing sight of the real environment.\n\nOpen the overview when you need it; keep it closed when you do not.",
-                    24,
+                    "Point with your right hand. Move the ray onto a button or camera card, then pinch your thumb and index finger to select.",
+                    21,
                     FontStyle.Normal,
                     TextSecondary,
-                    new Vector2(36f, -120f),
-                    new Vector2(-36f, -275f));
+                    new Vector2(34f, -130f),
+                    new Vector2(-34f, -206f));
+
+                GameObject pointCard = CreateRect(
+                    _onboardingRoot.transform,
+                    "PointGesture",
+                    new Vector2(320f, 112f),
+                    new Vector2(205f, -290f),
+                    PanelSoftColor);
+
+                AddText(
+                    pointCard.transform,
+                    "1  POINT",
+                    20,
+                    FontStyle.Bold,
+                    AccentColor,
+                    new Vector2(18f, -14f),
+                    new Vector2(-18f, -44f));
+
+                AddText(
+                    pointCard.transform,
+                    "Aim the hand ray at a UI element.",
+                    18,
+                    FontStyle.Normal,
+                    TextPrimary,
+                    new Vector2(18f, -52f),
+                    new Vector2(-18f, -96f));
+
+                GameObject pinchCard = CreateRect(
+                    _onboardingRoot.transform,
+                    "PinchGesture",
+                    new Vector2(320f, 112f),
+                    new Vector2(555f, -290f),
+                    PanelSoftColor);
+
+                AddText(
+                    pinchCard.transform,
+                    "2  PINCH",
+                    20,
+                    FontStyle.Bold,
+                    AccentColor,
+                    new Vector2(18f, -14f),
+                    new Vector2(-18f, -44f));
+
+                AddText(
+                    pinchCard.transform,
+                    "Pinch thumb + index finger to select.",
+                    18,
+                    FontStyle.Normal,
+                    TextPrimary,
+                    new Vector2(18f, -52f),
+                    new Vector2(-18f, -96f));
+
+                AddText(
+                    _onboardingRoot.transform,
+                    "Keep your hand in front of the headset cameras for reliable tracking.",
+                    16,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(34f, -356f),
+                    new Vector2(-34f, -382f),
+                    TextAnchor.UpperCenter);
                 break;
 
             case 1:
                 AddText(
                     _onboardingRoot.transform,
-                    "See what needs attention first",
+                    "Find what needs attention",
                     34,
                     FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(36f, -32f),
-                    new Vector2(-36f, -90f));
-
-                AddStatusLegend(
-                    _onboardingRoot.transform,
-                    "● HEALTHY",
-                    HealthyColor,
-                    -125f);
-
-                AddStatusLegend(
-                    _onboardingRoot.transform,
-                    "▲ WARNING",
-                    WarningColor,
-                    -185f);
-
-                AddStatusLegend(
-                    _onboardingRoot.transform,
-                    "■ OFFLINE",
-                    OfflineColor,
-                    -245f);
+                    new Vector2(34f, -72f),
+                    new Vector2(-34f, -118f));
 
                 AddText(
                     _onboardingRoot.transform,
-                    "Abnormal cameras are placed closer and made more prominent in the overview.",
+                    "The overview prioritizes abnormal cameras so you can decide what to inspect first.",
                     21,
                     FontStyle.Normal,
                     TextSecondary,
-                    new Vector2(270f, -125f),
-                    new Vector2(-36f, -270f));
+                    new Vector2(34f, -130f),
+                    new Vector2(-34f, -188f));
+
+                GameObject healthyCard = CreateRect(
+                    _onboardingRoot.transform,
+                    "HealthyLegend",
+                    new Vector2(210f, 104f),
+                    new Vector2(135f, -292f),
+                    PanelSoftColor);
+
+                AddText(
+                    healthyCard.transform,
+                    "●  HEALTHY",
+                    20,
+                    FontStyle.Bold,
+                    HealthyColor,
+                    new Vector2(16f, -18f),
+                    new Vector2(-16f, -50f));
+
+                AddText(
+                    healthyCard.transform,
+                    "No action needed",
+                    16,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(16f, -58f),
+                    new Vector2(-16f, -88f));
+
+                GameObject warningCard = CreateRect(
+                    _onboardingRoot.transform,
+                    "WarningLegend",
+                    new Vector2(210f, 104f),
+                    new Vector2(380f, -292f),
+                    PanelSoftColor);
+
+                AddText(
+                    warningCard.transform,
+                    "▲  WARNING",
+                    20,
+                    FontStyle.Bold,
+                    WarningColor,
+                    new Vector2(16f, -18f),
+                    new Vector2(-16f, -50f));
+
+                AddText(
+                    warningCard.transform,
+                    "Check the resource",
+                    16,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(16f, -58f),
+                    new Vector2(-16f, -88f));
+
+                GameObject offlineCard = CreateRect(
+                    _onboardingRoot.transform,
+                    "OfflineLegend",
+                    new Vector2(210f, 104f),
+                    new Vector2(625f, -292f),
+                    PanelSoftColor);
+
+                AddText(
+                    offlineCard.transform,
+                    "■  OFFLINE",
+                    20,
+                    FontStyle.Bold,
+                    OfflineColor,
+                    new Vector2(16f, -18f),
+                    new Vector2(-16f, -50f));
+
+                AddText(
+                    offlineCard.transform,
+                    "Inspect first",
+                    16,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(16f, -58f),
+                    new Vector2(-16f, -88f));
+
+                AddText(
+                    _onboardingRoot.transform,
+                    "Warning and offline cameras are made more prominent in the spatial overview.",
+                    16,
+                    FontStyle.Normal,
+                    TextSecondary,
+                    new Vector2(34f, -362f),
+                    new Vector2(-34f, -392f),
+                    TextAnchor.UpperCenter);
                 break;
 
             default:
                 AddText(
                     _onboardingRoot.transform,
-                    "Inspect with one clear action",
+                    "Inspect a camera in two ways",
                     34,
                     FontStyle.Bold,
                     TextPrimary,
-                    new Vector2(36f, -32f),
-                    new Vector2(-36f, -90f));
+                    new Vector2(34f, -72f),
+                    new Vector2(-34f, -118f));
 
                 AddText(
                     _onboardingRoot.transform,
-                    "Open Overview  →  Select a camera  →  View Details\n\nYou can also scan a camera QR code to open that camera directly.",
-                    24,
+                    "Use the overview when you are comparing cameras, or scan a camera QR code when you are already standing near the device.",
+                    21,
                     FontStyle.Normal,
                     TextSecondary,
-                    new Vector2(36f, -125f),
-                    new Vector2(-36f, -280f));
+                    new Vector2(34f, -130f),
+                    new Vector2(-34f, -205f));
+
+                GameObject overviewFlow = CreateRect(
+                    _onboardingRoot.transform,
+                    "OverviewFlow",
+                    new Vector2(692f, 72f),
+                    new Vector2(380f, -266f),
+                    PanelSoftColor);
+
+                AddText(
+                    overviewFlow.transform,
+                    "OVERVIEW   →   CAMERA   →   DETAILS",
+                    21,
+                    FontStyle.Bold,
+                    TextPrimary,
+                    new Vector2(18f, -18f),
+                    new Vector2(-18f, -52f),
+                    TextAnchor.UpperCenter);
+
+                GameObject qrFlow = CreateRect(
+                    _onboardingRoot.transform,
+                    "QrFlow",
+                    new Vector2(692f, 72f),
+                    new Vector2(380f, -354f),
+                    PanelSoftColor);
+
+                AddText(
+                    qrFlow.transform,
+                    "QR SCAN   →   CAMERA DETAILS",
+                    21,
+                    FontStyle.Bold,
+                    TextPrimary,
+                    new Vector2(18f, -18f),
+                    new Vector2(-18f, -52f),
+                    TextAnchor.UpperCenter);
                 break;
         }
 
         CreateButton(
             _onboardingRoot.transform,
             "Skip",
-            new Vector2(170f, 62f),
-            new Vector2(125f, -365f),
+            new Vector2(126f, 56f),
+            new Vector2(97f, -446f),
             FinishOnboarding,
             PanelSoftColor);
 
         string nextLabel =
-            _onboardingStep == 2 ? "Start monitoring" : "Next";
+            _onboardingStep == 2 ? "Start" : "Next";
 
         CreateButton(
             _onboardingRoot.transform,
             nextLabel,
-            new Vector2(240f, 62f),
-            new Vector2(540f, -365f),
+            new Vector2(160f, 56f),
+            new Vector2(646f, -446f),
             () =>
             {
                 if (_onboardingStep >= 2)
@@ -424,19 +604,28 @@ public class AxisMonitoringUI : MonoBehaviour
         GameObject titleCanvas =
             CreateCanvas(
                 "OverviewTitle",
-                new Vector2(450f, 80f),
+                new Vector2(500f, 92f),
                 parent,
-                new Vector3(0f, 0.26f, 0.95f),
+                new Vector3(0f, 0.27f, 0.95f),
                 PanelSoftColor);
 
         AddText(
             titleCanvas.transform,
-            "Camera Overview",
-            28,
+            "CAMERA OVERVIEW",
+            16,
+            FontStyle.Bold,
+            AccentColor,
+            new Vector2(22f, -14f),
+            new Vector2(-22f, -38f));
+
+        AddText(
+            titleCanvas.transform,
+            "Select a camera to inspect",
+            25,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(22f, -16f),
-            new Vector2(-22f, -58f));
+            new Vector2(22f, -42f),
+            new Vector2(-22f, -76f));
     }
 
     private CardVisual CreateCameraCard(
@@ -449,8 +638,8 @@ public class AxisMonitoringUI : MonoBehaviour
 
         Vector2 size =
             status == "HEALTHY"
-                ? new Vector2(290f, 126f)
-                : new Vector2(330f, 145f);
+                ? new Vector2(330f, 154f)
+                : new Vector2(360f, 166f);
 
         GameObject card =
             CreateCanvas(
@@ -477,29 +666,39 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             camera.cameraId,
-            status == "HEALTHY" ? 25 : 28,
+            24,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(18f, -15f),
-            new Vector2(-18f, -52f));
-
-        AddText(
-            card.transform,
-            camera.name,
-            19,
-            FontStyle.Normal,
-            TextSecondary,
-            new Vector2(18f, -53f),
-            new Vector2(-18f, -84f));
+            new Vector2(18f, -14f),
+            new Vector2(-160f, -46f));
 
         AddText(
             card.transform,
             $"{icon} {status}",
-            20,
+            17,
             FontStyle.Bold,
             statusColor,
-            new Vector2(18f, -88f),
-            new Vector2(-18f, -120f));
+            new Vector2(170f, -17f),
+            new Vector2(-18f, -44f),
+            TextAnchor.UpperRight);
+
+        AddText(
+            card.transform,
+            camera.name,
+            21,
+            FontStyle.Normal,
+            TextSecondary,
+            new Vector2(18f, -56f),
+            new Vector2(-18f, -94f));
+
+        AddText(
+            card.transform,
+            "PINCH TO OPEN",
+            14,
+            FontStyle.Bold,
+            AccentColor,
+            new Vector2(18f, -112f),
+            new Vector2(-18f, -138f));
 
         XRClickable clickable =
             AddClickable(
@@ -1263,7 +1462,10 @@ public class AxisMonitoringUI : MonoBehaviour
         text.horizontalOverflow =
             HorizontalWrapMode.Wrap;
         text.verticalOverflow =
-            VerticalWrapMode.Overflow;
+            VerticalWrapMode.Truncate;
+        text.resizeTextForBestFit = true;
+        text.resizeTextMinSize = Mathf.Max(12, fontSize - 6);
+        text.resizeTextMaxSize = fontSize;
         text.raycastTarget = false;
         text.text = textValue;
 

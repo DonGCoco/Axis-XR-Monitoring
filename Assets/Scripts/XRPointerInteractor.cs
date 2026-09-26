@@ -52,7 +52,12 @@ public class XRPointerInteractor : MonoBehaviour
 
             foreach (OVRHand hand in hands)
             {
-                if (hand.HandType == OVRHand.Hand.HandRight)
+                // The Core SDK 205 OVRHand API does not expose HandType
+                // publicly. The right-hand Building Block lives under
+                // RightHandAnchor, so use the hierarchy to identify it.
+                if (hand.transform.IsChildOf(
+                        FindFirstObjectByType<OVRCameraRig>()
+                            .rightHandAnchor))
                 {
                     _rightHand = hand;
                     break;

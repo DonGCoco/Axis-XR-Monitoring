@@ -2,14 +2,67 @@ using UnityEngine;
 
 public class XRPointerInteractor : MonoBehaviour
 {
-    [SerializeField] private float maxDistance = 4f;
+    [SerializeField] private float maxDistance = 5f;
 
     private Transform _rayOrigin;
+    private OVRHand _rightHand;
     private XRClickable _hovered;
     private LineRenderer _line;
+    private bool _usingHandRay;
+    private bool _wasPinching;
 
     public void Initialize()
     {
+        ResolveInputSource();
+
+        if (_line == null)
+            CreateLine();
+    }
+
+    private void ResolveInputSource()
+    {
+        // Prefer the Meta Interaction SDK HandRayInteractor that is configured
+        // under Hands/RightHand/HandInteractorsRight in the scene.
+        GameObject[] allObjects = FindObjectsByType<GameObject>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (GameObject candidate in allObjects)
+        {
+            if (candidate.name != "HandRayInteractor")
+                continue;
+
+            Transform pointerPose = FindChildRecursive(
+                candidate.transform,
+                "PointerPose");
+
+            if (pointerPose != null)
+            {
+                _rayOrigin = pointerPose;
+                _usingHandRay = true;
+                break;
+            }
+        }
+
+        if (_usingHandRay)
+        {
+            OVRHand[] hands = FindObjectsByType<OVRHand>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+
+            foreach (OVRHand hand in hands)
+            {
+                if (hand.HandType == OVRHand.Hand.HandRight)
+                {
+                    _rightHand = hand;
+                    break;
+                }
+            }
+
+            return;
+        }
+
+        // Controller fallback keeps the existing desktop/device workflow usable.
         OVRCameraRig rig = FindFirstObjectByType<OVRCameraRig>();
 
         if (rig != null && rig.rightControllerAnchor != null)
@@ -17,8 +70,25 @@ public class XRPointerInteractor : MonoBehaviour
 
         if (_rayOrigin == null && Camera.main != null)
             _rayOrigin = Camera.main.transform;
+    }
 
-        CreateLine();
+    private Transform FindChildRecursive(
+        Transform root,
+        string childName)
+    {
+        foreach (Transform child in root)
+        {
+            if (child.name == childName)
+                return child;
+
+            Transform result =
+                FindChildRecursive(child, childName);
+
+            if (result != null)
+                return result;
+        }
+
+        return null;
     }
 
     private void CreateLine()
@@ -33,7 +103,8 @@ public class XRPointerInteractor : MonoBehaviour
         if (shader != null)
         {
             Material material = new Material(shader);
-            material.color = new Color(0.75f, 0.9f, 1f, 0.75f);
+            material.color =
+                new Color(0.75f, 0.9f, 1f, 0.75f);
             _line.material = material;
         }
 
@@ -44,18 +115,26 @@ public class XRPointerInteractor : MonoBehaviour
     {
         if (_rayOrigin == null)
         {
-            Initialize();
+            ResolveInputSource();
+
             if (_rayOrigin == null)
                 return;
         }
 
-        Ray ray = new Ray(_rayOrigin.position, _rayOrigin.forward);
-        bool hitSomething = Physics.Raycast(ray, out RaycastHit hit, maxDistance);
+        Ray ray =
+            new Ray(_rayOrigin.position, _rayOrigin.forward);
+
+        bool hitSomething =
+            Physics.Raycast(
+                ray,
+                out RaycastHit hit,
+                maxDistance);
 
         XRClickable nextHovered = null;
 
         if (hitSomething)
-            nextHovered = hit.collider.GetComponent<XRClickable>();
+            nextHovered =
+                hit.collider.GetComponent<XRClickable>();
 
         if (_hovered != nextHovered)
         {
@@ -68,30 +147,62 @@ public class XRPointerInteractor : MonoBehaviour
                 _hovered.SetHovered(true);
         }
 
-        bool triggerDown =
-            OVRInput.GetDown(
-                OVRInput.Button.PrimaryIndexTrigger,
-                OVRInput.Controller.RTouch);
+        bool selectDown;
 
-        if (triggerDown && _hovered != null)
-            _hovered.InvokeClick();
-
-        if (_line != null)
+        if (_usingHandRay && _rightHand != null)
         {
-            bool triggerTouched =
-                OVRInput.Get(
+            bool pinching =
+                _rightHand.GetFingerIsPinching(
+                    OVRHand.HandFinger.Index);
+
+            selectDown = pinching && !_wasPinching;
+            _wasPinching = pinching;
+        }
+        else
+        {
+            selectDown =
+                OVRInput.GetDown(
                     OVRInput.Button.PrimaryIndexTrigger,
                     OVRInput.Controller.RTouch);
+        }
 
-            _line.enabled = _hovered != null || triggerTouched;
+        if (selectDown && _hovered != null)
+            _hovered.InvokeClick();
 
-            if (_line.enabled)
+        // Meta's HandRayInteractor renders its own ray. Keep the old line
+        // only for the controller fallback.
+        if (_line != null)
+        {
+            if (_usingHandRay)
             {
-                float distance = hitSomething ? hit.distance : maxDistance;
-                _line.SetPosition(0, _rayOrigin.position);
-                _line.SetPosition(
-                    1,
-                    _rayOrigin.position + _rayOrigin.forward * distance);
+                _line.enabled = false;
+            }
+            else
+            {
+                bool triggerTouched =
+                    OVRInput.Get(
+                        OVRInput.Button.PrimaryIndexTrigger,
+                        OVRInput.Controller.RTouch);
+
+                _line.enabled =
+                    _hovered != null || triggerTouched;
+
+                if (_line.enabled)
+                {
+                    float distance =
+                        hitSomething
+                            ? hit.distance
+                            : maxDistance;
+
+                    _line.SetPosition(
+                        0,
+                        _rayOrigin.position);
+
+                    _line.SetPosition(
+                        1,
+                        _rayOrigin.position
+                        + _rayOrigin.forward * distance);
+                }
             }
         }
     }

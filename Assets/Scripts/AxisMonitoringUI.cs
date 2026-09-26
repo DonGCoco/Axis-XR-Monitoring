@@ -559,10 +559,13 @@ public class AxisMonitoringUI : MonoBehaviour
         _overviewCameras = cameras;
         Array.Sort(cameras, CompareCameraPriority);
 
-        _overviewRoot = new GameObject(
-            _overviewMode == OverviewMode.SpatialPriority
-                ? "SpatialOverview"
-                : "GridOverview");
+        if (_overviewMode == OverviewMode.Grid)
+        {
+            BuildGridOverview(cameras);
+            return;
+        }
+
+        _overviewRoot = new GameObject("SpatialOverview");
         _overviewRoot.transform.position = _camera.transform.position;
         _overviewRoot.transform.rotation = _camera.transform.rotation;
 
@@ -602,22 +605,14 @@ public class AxisMonitoringUI : MonoBehaviour
             int statusIndex = counts[status]++;
             int statusTotal = totals[status];
 
-            Vector3 localPosition =
-                _overviewMode == OverviewMode.SpatialPriority
-                    ? GetOverviewPosition(
-                        status,
-                        statusIndex,
-                        statusTotal)
-                    : GetOverviewGridPosition(
-                        status,
-                        statusIndex,
-                        statusTotal);
-
             CardVisual card =
                 CreateCameraCard(
                     _overviewRoot.transform,
                     camera,
-                    localPosition);
+                    GetOverviewPosition(
+                        status,
+                        statusIndex,
+                        statusTotal));
 
             _cards.Add(card);
         }
@@ -627,9 +622,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _overviewRoot.transform,
             new Vector3(-0.12f, 0.20f, 0.90f),
             new Vector2(200f, 52f),
-            _overviewMode == OverviewMode.SpatialPriority
-                ? "● Spatial"
-                : "Spatial",
+            "● Spatial",
             () => SetOverviewMode(
                 OverviewMode.SpatialPriority));
 
@@ -638,9 +631,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _overviewRoot.transform,
             new Vector3(0.12f, 0.20f, 0.90f),
             new Vector2(170f, 52f),
-            _overviewMode == OverviewMode.Grid
-                ? "● Grid"
-                : "Grid",
+            "List",
             () => SetOverviewMode(
                 OverviewMode.Grid));
 
@@ -659,6 +650,198 @@ public class AxisMonitoringUI : MonoBehaviour
             new Vector2(132f, 58f),
             "Help",
             () => ShowOnboarding(0));
+    }
+
+    private void BuildGridOverview(CameraData[] cameras)
+    {
+        int cameraCount = 0;
+
+        foreach (CameraData camera in cameras)
+        {
+            if (camera != null)
+                cameraCount++;
+        }
+
+        float rowHeight = 72f;
+        float panelHeight =
+            Mathf.Max(430f, 190f + cameraCount * rowHeight);
+
+        _overviewRoot = CreateHeadLockedPanel(
+            "GridOverview",
+            new Vector2(820f, panelHeight),
+            new Vector3(0f, 0f, 0.94f));
+
+        _cards.Clear();
+
+        AddText(
+            _overviewRoot.transform,
+            "CAMERA OVERVIEW",
+            15,
+            FontStyle.Bold,
+            AccentColor,
+            new Vector2(32f, -22f),
+            new Vector2(-560f, -46f));
+
+        AddText(
+            _overviewRoot.transform,
+            "All cameras",
+            30,
+            FontStyle.Bold,
+            TextPrimary,
+            new Vector2(32f, -56f),
+            new Vector2(-400f, -96f));
+
+        CreateButton(
+            _overviewRoot.transform,
+            "Spatial",
+            new Vector2(130f, 48f),
+            new Vector2(225f, -42f),
+            () => SetOverviewMode(
+                OverviewMode.SpatialPriority),
+            PanelSoftColor);
+
+        CreateButton(
+            _overviewRoot.transform,
+            "● List",
+            new Vector2(120f, 48f),
+            new Vector2(350f, -42f),
+            () => SetOverviewMode(
+                OverviewMode.Grid),
+            AccentColor);
+
+        AddText(
+            _overviewRoot.transform,
+            "CAMERA",
+            14,
+            FontStyle.Bold,
+            TextSecondary,
+            new Vector2(34f, -118f),
+            new Vector2(-575f, -140f));
+
+        AddText(
+            _overviewRoot.transform,
+            "NAME",
+            14,
+            FontStyle.Bold,
+            TextSecondary,
+            new Vector2(250f, -118f),
+            new Vector2(-330f, -140f));
+
+        AddText(
+            _overviewRoot.transform,
+            "STATUS",
+            14,
+            FontStyle.Bold,
+            TextSecondary,
+            new Vector2(565f, -118f),
+            new Vector2(-34f, -140f),
+            TextAnchor.UpperRight);
+
+        int rowIndex = 0;
+
+        foreach (CameraData camera in cameras)
+        {
+            if (camera == null)
+                continue;
+
+            CardVisual row =
+                CreateGridCameraRow(
+                    _overviewRoot.transform,
+                    camera,
+                    -154f - rowIndex * rowHeight);
+
+            _cards.Add(row);
+            rowIndex++;
+        }
+
+        float buttonY =
+            -(panelHeight - 34f);
+
+        CreateButton(
+            _overviewRoot.transform,
+            "Close",
+            new Vector2(120f, 50f),
+            new Vector2(-320f, buttonY),
+            CloseOverview,
+            PanelSoftColor);
+
+        CreateButton(
+            _overviewRoot.transform,
+            "Help",
+            new Vector2(120f, 50f),
+            new Vector2(320f, buttonY),
+            () => ShowOnboarding(0),
+            PanelSoftColor);
+    }
+
+    private CardVisual CreateGridCameraRow(
+        Transform parent,
+        CameraData camera,
+        float top)
+    {
+        string status = NormalizeStatus(camera.status);
+        Color statusColor = StatusColor(status);
+
+        GameObject row =
+            CreateRect(
+                parent,
+                $"Row_{camera.cameraId}",
+                new Vector2(756f, 62f),
+                new Vector2(0f, top),
+                PanelSoftColor);
+
+        Image background =
+            row.GetComponent<Image>();
+
+        CreateRect(
+            row.transform,
+            "StatusAccent",
+            new Vector2(6f, 62f),
+            new Vector2(-375f, 0f),
+            statusColor);
+
+        AddText(
+            row.transform,
+            camera.cameraId,
+            19,
+            FontStyle.Bold,
+            TextPrimary,
+            new Vector2(22f, -18f),
+            new Vector2(-545f, -46f));
+
+        AddText(
+            row.transform,
+            camera.name,
+            18,
+            FontStyle.Normal,
+            TextPrimary,
+            new Vector2(240f, -18f),
+            new Vector2(-285f, -46f));
+
+        AddText(
+            row.transform,
+            StatusSymbol(status) + " " + status,
+            17,
+            FontStyle.Bold,
+            statusColor,
+            new Vector2(530f, -18f),
+            new Vector2(-22f, -46f),
+            TextAnchor.UpperRight);
+
+        XRClickable clickable =
+            AddClickable(
+                row,
+                background,
+                () => ShowDetails(camera),
+                PanelSoftColor,
+                new Color(0.12f, 0.20f, 0.28f, 0.98f));
+
+        return new CardVisual
+        {
+            data = camera,
+            group = null,
+            clickable = clickable
+        };
     }
 
     private void SetOverviewMode(
@@ -751,36 +934,6 @@ public class AxisMonitoringUI : MonoBehaviour
         }
     }
 
-    private Vector3 GetOverviewGridPosition(
-        string status,
-        int index,
-        int total)
-    {
-        // Grid keeps a common depth but still groups cameras by status:
-        // OFFLINE on top, WARNING in the middle, HEALTHY at the bottom.
-        float y;
-
-        switch (status)
-        {
-            case "OFFLINE":
-                y = 0.085f;
-                break;
-
-            case "WARNING":
-                y = -0.075f;
-                break;
-
-            default:
-                y = -0.235f;
-                break;
-        }
-
-        return new Vector3(
-            GetCenteredRowX(index, total, 0.34f),
-            y,
-            0.96f);
-    }
-
     private void CreateOverviewTitle(Transform parent)
     {
         GameObject titleCanvas =
@@ -802,9 +955,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
         AddText(
             titleCanvas.transform,
-            _overviewMode == OverviewMode.SpatialPriority
-                ? "Abnormal cameras are closer"
-                : "All cameras at equal distance",
+            "Abnormal cameras are closer",
             23,
             FontStyle.Bold,
             TextPrimary,
@@ -820,21 +971,12 @@ public class AxisMonitoringUI : MonoBehaviour
         string status = NormalizeStatus(camera.status);
         Color statusColor = StatusColor(status);
 
-        Vector2 size;
-
-        if (_overviewMode == OverviewMode.Grid)
-        {
-            size = new Vector2(310f, 160f);
-        }
-        else
-        {
-            size =
-                status == "OFFLINE"
-                    ? new Vector2(350f, 176f)
-                    : status == "WARNING"
-                        ? new Vector2(330f, 166f)
-                        : new Vector2(290f, 148f);
-        }
+        Vector2 size =
+            status == "OFFLINE"
+                ? new Vector2(350f, 176f)
+                : status == "WARNING"
+                    ? new Vector2(330f, 166f)
+                    : new Vector2(290f, 148f);
 
         GameObject card =
             CreateCanvas(
@@ -868,9 +1010,7 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             camera.cameraId,
-            _overviewMode == OverviewMode.Grid
-                ? 22
-                : status == "HEALTHY" ? 21 : 24,
+            status == "HEALTHY" ? 21 : 24,
             FontStyle.Bold,
             TextPrimary,
             new Vector2(18f, -18f),
@@ -879,9 +1019,7 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             $"{icon} {status}",
-            _overviewMode == OverviewMode.Grid
-                ? 15
-                : status == "HEALTHY" ? 14 : 16,
+            status == "HEALTHY" ? 14 : 16,
             FontStyle.Bold,
             statusColor,
             new Vector2(size.x * 0.50f, -20f),
@@ -891,9 +1029,7 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             camera.name,
-            _overviewMode == OverviewMode.Grid
-                ? 18
-                : status == "HEALTHY" ? 17 : 19,
+            status == "HEALTHY" ? 17 : 19,
             FontStyle.Normal,
             TextSecondary,
             new Vector2(18f, -60f),

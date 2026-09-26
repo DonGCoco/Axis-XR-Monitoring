@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class XRPointerInteractor : MonoBehaviour
@@ -5,10 +6,19 @@ public class XRPointerInteractor : MonoBehaviour
     [SerializeField] private float maxDistance = 5f;
 
     private OVRCameraRig _rig;
+    private OVRHand _leftHand;
     private OVRHand _rightHand;
-    private XRClickable _hovered;
-    private LineRenderer _line;
-    private bool _wasPinching;
+
+    private XRClickable _leftHovered;
+    private XRClickable _rightHovered;
+    private XRClickable _controllerHovered;
+
+    private LineRenderer _leftLine;
+    private LineRenderer _rightLine;
+    private LineRenderer _controllerLine;
+
+    private bool _leftWasPinching;
+    private bool _rightWasPinching;
     private float _nextResolveTime;
 
     public void Initialize()
@@ -17,8 +27,14 @@ public class XRPointerInteractor : MonoBehaviour
         ResolveRigAndHands();
         RestoreBuildingBlockHandVisuals();
 
-        if (_line == null)
-            CreateLine();
+        if (_leftLine == null)
+            _leftLine = CreateLine("LeftHandRay");
+
+        if (_rightLine == null)
+            _rightLine = CreateLine("RightHandRay");
+
+        if (_controllerLine == null)
+            _controllerLine = CreateLine("ControllerRay");
     }
 
     private void DisableComprehensiveRig()
@@ -44,6 +60,12 @@ public class XRPointerInteractor : MonoBehaviour
         if (_rig == null)
             return;
 
+        if (_rig.leftHandAnchor != null)
+        {
+            _leftHand =
+                _rig.leftHandAnchor.GetComponentInChildren<OVRHand>(true);
+        }
+
         if (_rig.rightHandAnchor != null)
         {
             _rightHand =
@@ -65,11 +87,8 @@ public class XRPointerInteractor : MonoBehaviour
         if (handAnchor == null)
             return;
 
-        // The Comprehensive Rig wizard disables the old Hand Tracking
-        // Building Block visuals to avoid duplicate hands. We intentionally
-        // use the original Core SDK hand blocks for this project, so restore
-        // those objects and their renderer/data components explicitly.
-        foreach (Transform child in handAnchor.GetComponentsInChildren<Transform>(true))
+        foreach (Transform child in
+                 handAnchor.GetComponentsInChildren<Transform>(true))
         {
             if (child.name.StartsWith("[BuildingBlock] Hand Tracking"))
                 child.gameObject.SetActive(true);
@@ -97,13 +116,18 @@ public class XRPointerInteractor : MonoBehaviour
         }
     }
 
-    private void CreateLine()
+    private LineRenderer CreateLine(string name)
     {
-        _line = gameObject.AddComponent<LineRenderer>();
-        _line.positionCount = 2;
-        _line.startWidth = 0.0035f;
-        _line.endWidth = 0.0015f;
-        _line.useWorldSpace = true;
+        GameObject lineObject = new GameObject(name);
+        lineObject.transform.SetParent(transform, false);
+
+        LineRenderer line =
+            lineObject.AddComponent<LineRenderer>();
+
+        line.positionCount = 2;
+        line.startWidth = 0.0035f;
+        line.endWidth = 0.0015f;
+        line.useWorldSpace = true;
 
         Shader shader = Shader.Find("Sprites/Default");
 
@@ -112,45 +136,118 @@ public class XRPointerInteractor : MonoBehaviour
             Material material = new Material(shader);
             material.color =
                 new Color(0.75f, 0.9f, 1f, 0.9f);
-            _line.material = material;
+            line.material = material;
         }
 
-        _line.enabled = false;
+        line.enabled = false;
+        return line;
     }
 
     private void Update()
     {
-        // Hands can become available a few frames after app startup.
         if (Time.unscaledTime >= _nextResolveTime)
         {
             _nextResolveTime = Time.unscaledTime + 0.5f;
             DisableComprehensiveRig();
 
-            if (_rig == null || _rightHand == null)
+            if (_rig == null ||
+                _leftHand == null ||
+                _rightHand == null)
+            {
                 ResolveRigAndHands();
+            }
 
             RestoreBuildingBlockHandVisuals();
         }
 
-        bool handRayValid =
-            _rightHand != null &&
-            _rightHand.isActiveAndEnabled &&
-            _rightHand.IsTracked &&
-            _rightHand.IsPointerPoseValid &&
-            _rightHand.PointerPose != null;
+        bool leftValid = IsHandRayValid(_leftHand);
+        bool rightValid = IsHandRayValid(_rightHand);
 
-        if (handRayValid)
+        XRClickable newLeftHovered = null;
+        XRClickable newRightHovered = null;
+        XRClickable newControllerHovered = null;
+
+        bool leftPinchDown = false;
+        bool rightPinchDown = false;
+
+        if (leftValid)
         {
-            UpdateHandRay();
-            return;
+            newLeftHovered =
+                UpdateHandRay(
+                    _leftHand,
+                    _leftLine,
+                    ref _leftWasPinching,
+                    out leftPinchDown);
+        }
+        else
+        {
+            _leftWasPinching = false;
+
+            if (_leftLine != null)
+                _leftLine.enabled = false;
         }
 
-        UpdateControllerFallback();
+        if (rightValid)
+        {
+            newRightHovered =
+                UpdateHandRay(
+                    _rightHand,
+                    _rightLine,
+                    ref _rightWasPinching,
+                    out rightPinchDown);
+        }
+        else
+        {
+            _rightWasPinching = false;
+
+            if (_rightLine != null)
+                _rightLine.enabled = false;
+        }
+
+        if (!leftValid && !rightValid)
+        {
+            newControllerHovered =
+                UpdateControllerFallback();
+        }
+        else if (_controllerLine != null)
+        {
+            _controllerLine.enabled = false;
+        }
+
+        UpdateHoverStates(
+            newLeftHovered,
+            newRightHovered,
+            newControllerHovered);
+
+        if (leftPinchDown && _leftHovered != null)
+            _leftHovered.InvokeClick();
+
+        if (rightPinchDown && _rightHovered != null)
+        {
+            if (!leftPinchDown ||
+                _rightHovered != _leftHovered)
+            {
+                _rightHovered.InvokeClick();
+            }
+        }
     }
 
-    private void UpdateHandRay()
+    private bool IsHandRayValid(OVRHand hand)
     {
-        Transform pointerPose = _rightHand.PointerPose;
+        return hand != null &&
+               hand.isActiveAndEnabled &&
+               hand.IsTracked &&
+               hand.IsPointerPoseValid &&
+               hand.PointerPose != null;
+    }
+
+    private XRClickable UpdateHandRay(
+        OVRHand hand,
+        LineRenderer line,
+        ref bool wasPinching,
+        out bool pinchDown)
+    {
+        Transform pointerPose = hand.PointerPose;
 
         Ray ray =
             new Ray(
@@ -163,61 +260,54 @@ public class XRPointerInteractor : MonoBehaviour
                 out RaycastHit hit,
                 maxDistance);
 
-        XRClickable nextHovered = null;
+        XRClickable hovered = null;
 
         if (hitSomething)
         {
-            nextHovered =
+            hovered =
                 hit.collider.GetComponent<XRClickable>();
         }
 
-        UpdateHover(nextHovered);
-
         bool pinching =
-            _rightHand.GetFingerIsPinching(
+            hand.GetFingerIsPinching(
                 OVRHand.HandFinger.Index);
 
-        bool pinchDown =
-            pinching && !_wasPinching;
+        pinchDown =
+            pinching && !wasPinching;
 
-        _wasPinching = pinching;
+        wasPinching = pinching;
 
-        if (pinchDown && _hovered != null)
-            _hovered.InvokeClick();
-
-        if (_line != null)
+        if (line != null)
         {
-            _line.enabled = true;
+            line.enabled = true;
 
             float distance =
                 hitSomething
                     ? hit.distance
                     : maxDistance;
 
-            _line.SetPosition(
+            line.SetPosition(
                 0,
                 pointerPose.position);
 
-            _line.SetPosition(
+            line.SetPosition(
                 1,
                 pointerPose.position
                 + pointerPose.forward * distance);
         }
+
+        return hovered;
     }
 
-    private void UpdateControllerFallback()
+    private XRClickable UpdateControllerFallback()
     {
-        _wasPinching = false;
-
         if (_rig == null ||
             _rig.rightControllerAnchor == null)
         {
-            ClearHover();
+            if (_controllerLine != null)
+                _controllerLine.enabled = false;
 
-            if (_line != null)
-                _line.enabled = false;
-
-            return;
+            return null;
         }
 
         Transform origin =
@@ -234,73 +324,96 @@ public class XRPointerInteractor : MonoBehaviour
                 out RaycastHit hit,
                 maxDistance);
 
-        XRClickable nextHovered = null;
+        XRClickable hovered = null;
 
         if (hitSomething)
         {
-            nextHovered =
+            hovered =
                 hit.collider.GetComponent<XRClickable>();
         }
-
-        UpdateHover(nextHovered);
 
         bool triggerDown =
             OVRInput.GetDown(
                 OVRInput.Button.PrimaryIndexTrigger,
                 OVRInput.Controller.RTouch);
 
-        if (triggerDown && _hovered != null)
-            _hovered.InvokeClick();
+        if (triggerDown && hovered != null)
+            hovered.InvokeClick();
 
-        if (_line != null)
+        if (_controllerLine != null)
         {
             bool triggerTouched =
                 OVRInput.Get(
                     OVRInput.Button.PrimaryIndexTrigger,
                     OVRInput.Controller.RTouch);
 
-            _line.enabled =
-                _hovered != null || triggerTouched;
+            _controllerLine.enabled =
+                hovered != null || triggerTouched;
 
-            if (_line.enabled)
+            if (_controllerLine.enabled)
             {
                 float distance =
                     hitSomething
                         ? hit.distance
                         : maxDistance;
 
-                _line.SetPosition(
+                _controllerLine.SetPosition(
                     0,
                     origin.position);
 
-                _line.SetPosition(
+                _controllerLine.SetPosition(
                     1,
                     origin.position
                     + origin.forward * distance);
             }
         }
+
+        return hovered;
     }
 
-    private void UpdateHover(XRClickable nextHovered)
+    private void UpdateHoverStates(
+        XRClickable newLeft,
+        XRClickable newRight,
+        XRClickable newController)
     {
-        if (_hovered == nextHovered)
-            return;
+        HashSet<XRClickable> previous =
+            new HashSet<XRClickable>();
 
-        if (_hovered != null)
-            _hovered.SetHovered(false);
+        HashSet<XRClickable> current =
+            new HashSet<XRClickable>();
 
-        _hovered = nextHovered;
+        if (_leftHovered != null)
+            previous.Add(_leftHovered);
 
-        if (_hovered != null)
-            _hovered.SetHovered(true);
-    }
+        if (_rightHovered != null)
+            previous.Add(_rightHovered);
 
-    private void ClearHover()
-    {
-        if (_hovered != null)
+        if (_controllerHovered != null)
+            previous.Add(_controllerHovered);
+
+        if (newLeft != null)
+            current.Add(newLeft);
+
+        if (newRight != null)
+            current.Add(newRight);
+
+        if (newController != null)
+            current.Add(newController);
+
+        foreach (XRClickable clickable in previous)
         {
-            _hovered.SetHovered(false);
-            _hovered = null;
+            if (!current.Contains(clickable))
+                clickable.SetHovered(false);
         }
+
+        foreach (XRClickable clickable in current)
+        {
+            if (!previous.Contains(clickable))
+                clickable.SetHovered(true);
+        }
+
+        _leftHovered = newLeft;
+        _rightHovered = newRight;
+        _controllerHovered = newController;
     }
 }

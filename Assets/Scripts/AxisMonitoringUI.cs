@@ -377,7 +377,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _onboardingRoot.transform,
             "Skip",
             new Vector2(120f, 52f),
-            new Vector2(-245f, -390f),
+            new Vector2(-245f, -358f),
             FinishOnboarding,
             PanelSoftColor);
 
@@ -388,7 +388,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _onboardingRoot.transform,
             nextLabel,
             new Vector2(150f, 52f),
-            new Vector2(235f, -390f),
+            new Vector2(235f, -358f),
             () =>
             {
                 if (_onboardingStep >= 2)
@@ -483,48 +483,45 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _cards.Clear();
 
-        CreateCanvas(
-            "OverviewBackdrop",
-            new Vector2(1120f, 520f),
-            _overviewRoot.transform,
-            new Vector3(0f, 0f, 1.02f),
-            new Color(0.02f, 0.028f, 0.04f, 0.86f));
-
         CreateOverviewTitle(_overviewRoot.transform);
 
-        int visibleIndex = 0;
+        Dictionary<string, int> counts =
+            new Dictionary<string, int>();
 
         foreach (CameraData camera in cameras)
         {
             if (camera == null)
                 continue;
 
-            Vector3 localPosition =
-                GetOverviewGridPosition(visibleIndex);
+            string status = NormalizeStatus(camera.status);
+
+            if (!counts.ContainsKey(status))
+                counts[status] = 0;
+
+            int statusIndex = counts[status]++;
 
             CardVisual card =
                 CreateCameraCard(
                     _overviewRoot.transform,
                     camera,
-                    localPosition);
+                    GetOverviewPosition(status, statusIndex));
 
             _cards.Add(card);
-            visibleIndex++;
         }
 
         CreateButtonCanvas(
             "OverviewClose",
             _overviewRoot.transform,
-            new Vector3(-0.42f, -0.225f, 0.95f),
-            new Vector2(150f, 54f),
+            new Vector3(-0.13f, -0.27f, 0.88f),
+            new Vector2(132f, 58f),
             "Close",
             CloseOverview);
 
         CreateButtonCanvas(
             "OverviewHelp",
             _overviewRoot.transform,
-            new Vector3(0.42f, -0.225f, 0.95f),
-            new Vector2(130f, 54f),
+            new Vector3(0.13f, -0.27f, 0.88f),
+            new Vector2(132f, 58f),
             "Help",
             () => ShowOnboarding(0));
     }
@@ -557,15 +554,36 @@ public class AxisMonitoringUI : MonoBehaviour
             : status.Trim().ToUpperInvariant();
     }
 
-    private Vector3 GetOverviewGridPosition(int index)
+    private Vector3 GetOverviewPosition(
+        string status,
+        int index)
     {
-        int column = index % 3;
-        int row = index / 3;
+        float sideOffset =
+            index == 0
+                ? 0f
+                : ((index % 2 == 1 ? 1f : -1f) *
+                   (0.34f + 0.20f * ((index - 1) / 2)));
 
-        float x = (column - 1) * 0.34f;
-        float y = 0.035f - row * 0.19f;
+        switch (status)
+        {
+            case "OFFLINE":
+                return new Vector3(
+                    -0.24f + sideOffset,
+                    0.08f,
+                    0.78f);
 
-        return new Vector3(x, y, 0.95f);
+            case "WARNING":
+                return new Vector3(
+                    0.18f + sideOffset,
+                    0.035f,
+                    0.90f);
+
+            default:
+                return new Vector3(
+                    0.04f + sideOffset,
+                    -0.14f,
+                    1.10f);
+        }
     }
 
     private void CreateOverviewTitle(Transform parent)
@@ -573,10 +591,10 @@ public class AxisMonitoringUI : MonoBehaviour
         GameObject titleCanvas =
             CreateCanvas(
                 "OverviewTitle",
-                new Vector2(760f, 84f),
+                new Vector2(500f, 82f),
                 parent,
-                new Vector3(0f, 0.245f, 0.95f),
-                new Color(0f, 0f, 0f, 0f));
+                new Vector3(0f, 0.29f, 0.94f),
+                PanelSoftColor);
 
         AddText(
             titleCanvas.transform,
@@ -584,17 +602,17 @@ public class AxisMonitoringUI : MonoBehaviour
             15,
             FontStyle.Bold,
             AccentColor,
-            new Vector2(18f, -10f),
-            new Vector2(-18f, -32f));
+            new Vector2(20f, -10f),
+            new Vector2(-20f, -30f));
 
         AddText(
             titleCanvas.transform,
-            "Select a camera to inspect",
-            25,
+            "Abnormal cameras are closer",
+            23,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(18f, -36f),
-            new Vector2(-18f, -70f));
+            new Vector2(20f, -35f),
+            new Vector2(-20f, -66f));
     }
 
     private CardVisual CreateCameraCard(
@@ -605,7 +623,12 @@ public class AxisMonitoringUI : MonoBehaviour
         string status = NormalizeStatus(camera.status);
         Color statusColor = StatusColor(status);
 
-        Vector2 size = new Vector2(310f, 166f);
+        Vector2 size =
+            status == "OFFLINE"
+                ? new Vector2(350f, 176f)
+                : status == "WARNING"
+                    ? new Vector2(330f, 166f)
+                    : new Vector2(290f, 148f);
 
         GameObject card =
             CreateCanvas(
@@ -639,39 +662,39 @@ public class AxisMonitoringUI : MonoBehaviour
         AddText(
             card.transform,
             camera.cameraId,
-            23,
+            status == "HEALTHY" ? 21 : 24,
             FontStyle.Bold,
             TextPrimary,
             new Vector2(18f, -18f),
-            new Vector2(-135f, -48f));
+            new Vector2(-140f, -48f));
 
         AddText(
             card.transform,
             $"{icon} {status}",
-            16,
+            status == "HEALTHY" ? 14 : 16,
             FontStyle.Bold,
             statusColor,
-            new Vector2(155f, -20f),
+            new Vector2(size.x * 0.50f, -20f),
             new Vector2(-18f, -46f),
             TextAnchor.UpperRight);
 
         AddText(
             card.transform,
             camera.name,
-            19,
+            status == "HEALTHY" ? 17 : 19,
             FontStyle.Normal,
             TextSecondary,
-            new Vector2(18f, -62f),
-            new Vector2(-18f, -94f));
+            new Vector2(18f, -60f),
+            new Vector2(-18f, -92f));
 
         AddText(
             card.transform,
             "PINCH TO INSPECT",
-            14,
+            13,
             FontStyle.Bold,
             AccentColor,
-            new Vector2(18f, -122f),
-            new Vector2(-18f, -146f));
+            new Vector2(18f, -(size.y - 44f)),
+            new Vector2(-18f, -(size.y - 20f)));
 
         XRClickable clickable =
             AddClickable(
@@ -870,7 +893,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _detailsRoot.transform,
             "Overview",
             new Vector2(170f, 58f),
-            new Vector2(210f, -455f),
+            new Vector2(210f, -430f),
             OpenOverview,
             AccentColor);
 
@@ -878,7 +901,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _detailsRoot.transform,
             "Close",
             new Vector2(120f, 58f),
-            new Vector2(-240f, -455f),
+            new Vector2(-240f, -430f),
             ShowIdle,
             PanelSoftColor);
     }
@@ -1091,7 +1114,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _messageRoot.transform,
             "Retry",
             new Vector2(160f, 58f),
-            new Vector2(135f, -205f),
+            new Vector2(135f, -182f),
             OpenOverview,
             AccentColor);
 
@@ -1099,7 +1122,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _messageRoot.transform,
             "Close",
             new Vector2(120f, 58f),
-            new Vector2(-165f, -205f),
+            new Vector2(-165f, -182f),
             ShowIdle,
             PanelSoftColor);
     }
@@ -1139,7 +1162,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _messageRoot.transform,
             "Close",
             new Vector2(130f, 58f),
-            new Vector2(0f, -215f),
+            new Vector2(0f, -192f),
             ShowIdle,
             PanelSoftColor);
     }
@@ -1309,14 +1332,16 @@ public class AxisMonitoringUI : MonoBehaviour
             root.transform.Find("Background")
                 .GetComponent<Image>();
 
+        float verticalInset = Mathf.Min(10f, size.y * 0.18f);
+
         AddText(
             root.transform,
             label,
-            22,
+            21,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(12f, -10f),
-            new Vector2(-12f, -58f),
+            new Vector2(12f, -verticalInset),
+            new Vector2(-12f, -(size.y - verticalInset)),
             TextAnchor.MiddleCenter);
 
         AddClickable(
@@ -1344,14 +1369,16 @@ public class AxisMonitoringUI : MonoBehaviour
             anchoredPosition,
             backgroundColor);
 
+        float verticalInset = Mathf.Min(9f, size.y * 0.18f);
+
         AddText(
             button.transform,
             label,
-            20,
+            19,
             FontStyle.Bold,
             TextPrimary,
-            new Vector2(10f, -8f),
-            new Vector2(-10f, -52f),
+            new Vector2(10f, -verticalInset),
+            new Vector2(-10f, -(size.y - verticalInset)),
             TextAnchor.MiddleCenter);
 
         AddClickable(

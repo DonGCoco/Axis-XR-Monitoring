@@ -570,6 +570,22 @@ public class AxisMonitoringUI : MonoBehaviour
 
         CreateOverviewTitle(_overviewRoot.transform);
 
+        Dictionary<string, int> totals =
+            new Dictionary<string, int>();
+
+        foreach (CameraData camera in cameras)
+        {
+            if (camera == null)
+                continue;
+
+            string status = NormalizeStatus(camera.status);
+
+            if (!totals.ContainsKey(status))
+                totals[status] = 0;
+
+            totals[status]++;
+        }
+
         Dictionary<string, int> counts =
             new Dictionary<string, int>();
 
@@ -584,11 +600,18 @@ public class AxisMonitoringUI : MonoBehaviour
                 counts[status] = 0;
 
             int statusIndex = counts[status]++;
+            int statusTotal = totals[status];
 
             Vector3 localPosition =
                 _overviewMode == OverviewMode.SpatialPriority
-                    ? GetOverviewPosition(status, statusIndex)
-                    : GetOverviewGridPosition(_cards.Count);
+                    ? GetOverviewPosition(
+                        status,
+                        statusIndex,
+                        statusTotal)
+                    : GetOverviewGridPosition(
+                        status,
+                        statusIndex,
+                        statusTotal);
 
             CardVisual card =
                 CreateCameraCard(
@@ -690,48 +713,70 @@ public class AxisMonitoringUI : MonoBehaviour
             : status.Trim().ToUpperInvariant();
     }
 
+    private float GetCenteredRowX(
+        int index,
+        int total,
+        float spacing)
+    {
+        return (index - (total - 1) * 0.5f) * spacing;
+    }
+
     private Vector3 GetOverviewPosition(
         string status,
-        int index)
+        int index,
+        int total)
     {
-        float sideOffset =
-            index == 0
-                ? 0f
-                : ((index % 2 == 1 ? 1f : -1f) *
-                   (0.34f + 0.20f * ((index - 1) / 2)));
-
+        // Spatial-priority layout:
+        // problem rows are higher and physically closer;
+        // healthy cameras stay lower and farther away.
         switch (status)
         {
             case "OFFLINE":
                 return new Vector3(
-                    -0.24f + sideOffset,
-                    0.08f,
-                    0.78f);
+                    GetCenteredRowX(index, total, 0.38f),
+                    0.09f,
+                    0.76f);
 
             case "WARNING":
                 return new Vector3(
-                    0.18f + sideOffset,
-                    0.035f,
+                    GetCenteredRowX(index, total, 0.36f),
+                    -0.055f,
                     0.90f);
 
             default:
                 return new Vector3(
-                    0.04f + sideOffset,
-                    -0.14f,
+                    GetCenteredRowX(index, total, 0.32f),
+                    -0.21f,
                     1.10f);
         }
     }
 
-    private Vector3 GetOverviewGridPosition(int index)
+    private Vector3 GetOverviewGridPosition(
+        string status,
+        int index,
+        int total)
     {
-        int column = index % 3;
-        int row = index / 3;
+        // Grid keeps a common depth but still groups cameras by status:
+        // OFFLINE on top, WARNING in the middle, HEALTHY at the bottom.
+        float y;
 
-        float x = (column - 1) * 0.34f;
-        float y = 0.015f - row * 0.19f;
+        switch (status)
+        {
+            case "OFFLINE":
+                y = 0.085f;
+                break;
+
+            case "WARNING":
+                y = -0.075f;
+                break;
+
+            default:
+                y = -0.235f;
+                break;
+        }
 
         return new Vector3(
-            x,
+            GetCenteredRowX(index, total, 0.34f),
             y,
             0.96f);
     }

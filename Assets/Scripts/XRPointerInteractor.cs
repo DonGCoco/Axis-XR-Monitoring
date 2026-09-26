@@ -19,6 +19,10 @@ public class XRPointerInteractor : MonoBehaviour
     private Vector3 _rightRayDirection;
     private bool _leftRayDirectionValid;
     private bool _rightRayDirectionValid;
+    private Vector3 _leftLockedDirection;
+    private Vector3 _rightLockedDirection;
+    private bool _leftDirectionLocked;
+    private bool _rightDirectionLocked;
 
     private XRClickable _leftHovered;
     private XRClickable _rightHovered;
@@ -303,11 +307,14 @@ public class XRPointerInteractor : MonoBehaviour
                     ref _leftWasPinching,
                     ref _leftRayDirection,
                     ref _leftRayDirectionValid,
+                    ref _leftLockedDirection,
+                    ref _leftDirectionLocked,
                     out leftPinchDown);
         }
         else
         {
             _leftWasPinching = false;
+            _leftDirectionLocked = false;
 
             if (_leftLine != null)
                 _leftLine.enabled = false;
@@ -324,11 +331,14 @@ public class XRPointerInteractor : MonoBehaviour
                     ref _rightWasPinching,
                     ref _rightRayDirection,
                     ref _rightRayDirectionValid,
+                    ref _rightLockedDirection,
+                    ref _rightDirectionLocked,
                     out rightPinchDown);
         }
         else
         {
             _rightWasPinching = false;
+            _rightDirectionLocked = false;
 
             if (_rightLine != null)
                 _rightLine.enabled = false;
@@ -394,47 +404,108 @@ public class XRPointerInteractor : MonoBehaviour
         ref bool wasPinching,
         ref Vector3 smoothedDirection,
         ref bool smoothedDirectionValid,
+        ref Vector3 lockedDirection,
+        ref bool directionLocked,
         out bool pinchDown)
     {
         Vector3 origin;
-        Vector3 rawDirection;
+        Vector3 fingerDirection;
 
         bool hasFingerRay =
             TryGetIndexFingerRay(
                 indexDistal,
                 indexTip,
                 out origin,
-                out rawDirection);
+                out fingerDirection);
 
-        if (!hasFingerRay)
+        Transform pointerPose =
+            hand.PointerPose;
+
+        bool hasPointerPose =
+            hand.IsPointerPoseValid &&
+            pointerPose != null;
+
+        Vector3 desiredDirection;
+
+        if (hasPointerPose && hasFingerRay)
         {
-            Transform pointerPose = hand.PointerPose;
-            origin = pointerPose.position;
-            rawDirection = pointerPose.forward;
+            // Keep the stable Meta pointer pose as the main aiming direction,
+            // but give the visible ray a small amount of index-finger influence
+            // so it still feels connected to the hand.
+            desiredDirection =
+                Vector3.Slerp(
+                    pointerPose.forward,
+                    fingerDirection,
+                    0.22f).normalized;
         }
-
-        if (!smoothedDirectionValid)
+        else if (hasPointerPose)
         {
-            smoothedDirection = rawDirection;
-            smoothedDirectionValid = true;
+            desiredDirection =
+                pointerPose.forward;
         }
         else
         {
-            float blend =
-                1f - Mathf.Exp(
-                    -18f * Time.unscaledDeltaTime);
-
-            smoothedDirection =
-                Vector3.Slerp(
-                    smoothedDirection,
-                    rawDirection,
-                    blend).normalized;
+            desiredDirection =
+                fingerDirection;
         }
+
+        if (!hasFingerRay && hasPointerPose)
+            origin = pointerPose.position;
+
+        bool pinching =
+            hand.GetFingerIsPinching(
+                OVRHand.HandFinger.Index);
+
+        pinchDown =
+            pinching && !wasPinching;
+
+        // While the fingers are closing into a pinch, their physical direction
+        // changes a lot. Lock the aiming direction for the duration of the
+        // pinch so the ray stays on the selected UI instead of jumping away.
+        if (pinching)
+        {
+            if (!directionLocked)
+            {
+                lockedDirection =
+                    smoothedDirectionValid
+                        ? smoothedDirection
+                        : desiredDirection;
+
+                directionLocked = true;
+            }
+        }
+        else
+        {
+            directionLocked = false;
+
+            if (!smoothedDirectionValid)
+            {
+                smoothedDirection = desiredDirection;
+                smoothedDirectionValid = true;
+            }
+            else
+            {
+                float blend =
+                    1f - Mathf.Exp(
+                        -12f * Time.unscaledDeltaTime);
+
+                smoothedDirection =
+                    Vector3.Slerp(
+                        smoothedDirection,
+                        desiredDirection,
+                        blend).normalized;
+            }
+        }
+
+        Vector3 finalDirection =
+            directionLocked
+                ? lockedDirection
+                : smoothedDirection;
 
         Ray ray =
             new Ray(
                 origin,
-                smoothedDirection);
+                finalDirection);
 
         bool hitSomething =
             Physics.Raycast(
@@ -449,13 +520,6 @@ public class XRPointerInteractor : MonoBehaviour
             hovered =
                 hit.collider.GetComponent<XRClickable>();
         }
-
-        bool pinching =
-            hand.GetFingerIsPinching(
-                OVRHand.HandFinger.Index);
-
-        pinchDown =
-            pinching && !wasPinching;
 
         wasPinching = pinching;
 
@@ -475,7 +539,7 @@ public class XRPointerInteractor : MonoBehaviour
             line.SetPosition(
                 1,
                 origin
-                + smoothedDirection * distance);
+                + finalDirection * distance);
         }
 
         return hovered;

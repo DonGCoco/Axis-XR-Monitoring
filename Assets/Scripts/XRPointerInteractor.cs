@@ -15,15 +15,6 @@ public class XRPointerInteractor : MonoBehaviour
     private Transform _rightIndexDistal;
     private Transform _rightIndexTip;
 
-    private Vector3 _leftRayDirection;
-    private Vector3 _rightRayDirection;
-    private bool _leftRayDirectionValid;
-    private bool _rightRayDirectionValid;
-    private Vector3 _leftLockedDirection;
-    private Vector3 _rightLockedDirection;
-    private bool _leftDirectionLocked;
-    private bool _rightDirectionLocked;
-
     private XRClickable _leftHovered;
     private XRClickable _rightHovered;
     private XRClickable _controllerHovered;
@@ -278,16 +269,10 @@ public class XRPointerInteractor : MonoBehaviour
         }
 
         bool leftValid =
-            IsHandRayValid(
-                _leftHand,
-                _leftIndexDistal,
-                _leftIndexTip);
+            IsHandRayValid(_leftHand);
 
         bool rightValid =
-            IsHandRayValid(
-                _rightHand,
-                _rightIndexDistal,
-                _rightIndexTip);
+            IsHandRayValid(_rightHand);
 
         XRClickable newLeftHovered = null;
         XRClickable newRightHovered = null;
@@ -301,20 +286,14 @@ public class XRPointerInteractor : MonoBehaviour
             newLeftHovered =
                 UpdateHandRay(
                     _leftHand,
-                    _leftIndexDistal,
                     _leftIndexTip,
                     _leftLine,
                     ref _leftWasPinching,
-                    ref _leftRayDirection,
-                    ref _leftRayDirectionValid,
-                    ref _leftLockedDirection,
-                    ref _leftDirectionLocked,
                     out leftPinchDown);
         }
         else
         {
             _leftWasPinching = false;
-            _leftDirectionLocked = false;
 
             if (_leftLine != null)
                 _leftLine.enabled = false;
@@ -325,20 +304,14 @@ public class XRPointerInteractor : MonoBehaviour
             newRightHovered =
                 UpdateHandRay(
                     _rightHand,
-                    _rightIndexDistal,
                     _rightIndexTip,
                     _rightLine,
                     ref _rightWasPinching,
-                    ref _rightRayDirection,
-                    ref _rightRayDirectionValid,
-                    ref _rightLockedDirection,
-                    ref _rightDirectionLocked,
                     out rightPinchDown);
         }
         else
         {
             _rightWasPinching = false;
-            _rightDirectionLocked = false;
 
             if (_rightLine != null)
                 _rightLine.enabled = false;
@@ -372,144 +345,35 @@ public class XRPointerInteractor : MonoBehaviour
         }
     }
 
-    private bool IsHandRayValid(
-        OVRHand hand,
-        Transform indexDistal,
-        Transform indexTip)
+    private bool IsHandRayValid(OVRHand hand)
     {
-        if (hand == null ||
-            !hand.isActiveAndEnabled ||
-            !hand.IsTracked)
-        {
-            return false;
-        }
-
-        bool fingerRayAvailable =
-            indexDistal != null &&
-            indexTip != null;
-
-        bool pointerFallbackAvailable =
-            hand.IsPointerPoseValid &&
-            hand.PointerPose != null;
-
-        return fingerRayAvailable ||
-               pointerFallbackAvailable;
+        return hand != null &&
+               hand.isActiveAndEnabled &&
+               hand.IsTracked &&
+               hand.IsPointerPoseValid &&
+               hand.PointerPose != null;
     }
 
     private XRClickable UpdateHandRay(
         OVRHand hand,
-        Transform indexDistal,
         Transform indexTip,
         LineRenderer line,
         ref bool wasPinching,
-        ref Vector3 smoothedDirection,
-        ref bool smoothedDirectionValid,
-        ref Vector3 lockedDirection,
-        ref bool directionLocked,
         out bool pinchDown)
     {
-        Vector3 origin;
-        Vector3 fingerDirection;
+        // Meta's system-defined pointer pose is the source of truth for aiming.
+        // Do not derive the aim from individual finger bones: the system pose
+        // already includes the filtering/aim model used for far-field UI.
+        Transform pointerPose = hand.PointerPose;
 
-        bool hasFingerRay =
-            TryGetIndexFingerRay(
-                indexDistal,
-                indexTip,
-                out origin,
-                out fingerDirection);
-
-        Transform pointerPose =
-            hand.PointerPose;
-
-        bool hasPointerPose =
-            hand.IsPointerPoseValid &&
-            pointerPose != null;
-
-        Vector3 desiredDirection;
-
-        if (hasPointerPose && hasFingerRay)
-        {
-            // Keep the stable Meta pointer pose as the main aiming direction,
-            // but give the visible ray a small amount of index-finger influence
-            // so it still feels connected to the hand.
-            desiredDirection =
-                Vector3.Slerp(
-                    pointerPose.forward,
-                    fingerDirection,
-                    0.22f).normalized;
-        }
-        else if (hasPointerPose)
-        {
-            desiredDirection =
-                pointerPose.forward;
-        }
-        else
-        {
-            desiredDirection =
-                fingerDirection;
-        }
-
-        if (!hasFingerRay && hasPointerPose)
-            origin = pointerPose.position;
-
-        bool pinching =
-            hand.GetFingerIsPinching(
-                OVRHand.HandFinger.Index);
-
-        pinchDown =
-            pinching && !wasPinching;
-
-        // While the fingers are closing into a pinch, their physical direction
-        // changes a lot. Lock the aiming direction for the duration of the
-        // pinch so the ray stays on the selected UI instead of jumping away.
-        if (pinching)
-        {
-            if (!directionLocked)
-            {
-                lockedDirection =
-                    smoothedDirectionValid
-                        ? smoothedDirection
-                        : desiredDirection;
-
-                directionLocked = true;
-            }
-        }
-        else
-        {
-            directionLocked = false;
-
-            if (!smoothedDirectionValid)
-            {
-                smoothedDirection = desiredDirection;
-                smoothedDirectionValid = true;
-            }
-            else
-            {
-                float blend =
-                    1f - Mathf.Exp(
-                        -12f * Time.unscaledDeltaTime);
-
-                smoothedDirection =
-                    Vector3.Slerp(
-                        smoothedDirection,
-                        desiredDirection,
-                        blend).normalized;
-            }
-        }
-
-        Vector3 finalDirection =
-            directionLocked
-                ? lockedDirection
-                : smoothedDirection;
-
-        Ray ray =
+        Ray systemRay =
             new Ray(
-                origin,
-                finalDirection);
+                pointerPose.position,
+                pointerPose.forward);
 
         bool hitSomething =
             Physics.Raycast(
-                ray,
+                systemRay,
                 out RaycastHit hit,
                 maxDistance);
 
@@ -521,64 +385,40 @@ public class XRPointerInteractor : MonoBehaviour
                 hit.collider.GetComponent<XRClickable>();
         }
 
+        bool pinching =
+            hand.GetFingerIsPinching(
+                OVRHand.HandFinger.Index);
+
+        pinchDown =
+            pinching && !wasPinching;
+
         wasPinching = pinching;
 
         if (line != null)
         {
             line.enabled = true;
 
-            float distance =
+            // Meta's system pointer pose lives near the wrist, while the
+            // visible hand affordance is near the fingers. Keep hit-testing
+            // on the system ray, but draw the line from the fingertip toward
+            // the actual system target so the visual ray feels attached to
+            // the hand instead of emerging from the wrist.
+            Vector3 visualOrigin =
+                indexTip != null
+                    ? indexTip.position
+                    : pointerPose.position;
+
+            Vector3 target =
                 hitSomething
-                    ? hit.distance
-                    : maxDistance;
+                    ? hit.point
+                    : pointerPose.position +
+                      pointerPose.forward * maxDistance;
 
-            line.SetPosition(
-                0,
-                origin);
-
-            line.SetPosition(
-                1,
-                origin
-                + finalDirection * distance);
+            line.SetPosition(0, visualOrigin);
+            line.SetPosition(1, target);
         }
 
         return hovered;
-    }
-
-    private bool TryGetIndexFingerRay(
-        Transform indexDistal,
-        Transform indexTip,
-        out Vector3 origin,
-        out Vector3 direction)
-    {
-        origin = Vector3.zero;
-        direction = Vector3.forward;
-
-        if (indexDistal == null ||
-            indexTip == null)
-        {
-            return false;
-        }
-
-        // In the OpenXR hand skeleton used by this project, the distal/tip
-        // transform ordering is opposite to the visual pointing direction.
-        // Flip the vector so the rendered ray follows the visible index finger.
-        Vector3 fingerVector =
-            indexDistal.position -
-            indexTip.position;
-
-        if (fingerVector.sqrMagnitude < 0.000001f)
-            return false;
-
-        direction = fingerVector.normalized;
-
-        // Start just beyond the fingertip so the ray visually comes out of
-        // the index finger and does not intersect the hand mesh itself.
-        origin =
-            indexTip.position +
-            direction * 0.006f;
-
-        return true;
     }
 
     private XRClickable UpdateControllerFallback()

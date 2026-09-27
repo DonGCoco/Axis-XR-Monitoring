@@ -286,7 +286,6 @@ public class XRPointerInteractor : MonoBehaviour
             newLeftHovered =
                 UpdateHandRay(
                     _leftHand,
-                    _leftIndexTip,
                     _leftLine,
                     ref _leftWasPinching,
                     out leftPinchDown);
@@ -304,7 +303,6 @@ public class XRPointerInteractor : MonoBehaviour
             newRightHovered =
                 UpdateHandRay(
                     _rightHand,
-                    _rightIndexTip,
                     _rightLine,
                     ref _rightWasPinching,
                     out rightPinchDown);
@@ -356,20 +354,27 @@ public class XRPointerInteractor : MonoBehaviour
 
     private XRClickable UpdateHandRay(
         OVRHand hand,
-        Transform indexTip,
         LineRenderer line,
         ref bool wasPinching,
         out bool pinchDown)
     {
-        // Meta's system-defined pointer pose is the source of truth for aiming.
-        // Do not derive the aim from individual finger bones: the system pose
-        // already includes the filtering/aim model used for far-field UI.
+        // Match Meta's far-field interaction principle: the system-defined
+        // pointer pose controls BOTH hit testing and the visible ray.
+        // Do not force the visual line through the physical fingertip because
+        // that creates a fake diagonal when the fingertip and system aim pose
+        // are offset from one another.
         Transform pointerPose = hand.PointerPose;
+
+        Vector3 origin =
+            pointerPose.position;
+
+        Vector3 direction =
+            pointerPose.forward.normalized;
 
         Ray systemRay =
             new Ray(
-                pointerPose.position,
-                pointerPose.forward);
+                origin,
+                direction);
 
         bool hitSomething =
             Physics.Raycast(
@@ -398,24 +403,38 @@ public class XRPointerInteractor : MonoBehaviour
         {
             line.enabled = true;
 
-            // Meta's system pointer pose lives near the wrist, while the
-            // visible hand affordance is near the fingers. Keep hit-testing
-            // on the system ray, but draw the line from the fingertip toward
-            // the actual system target so the visual ray feels attached to
-            // the hand instead of emerging from the wrist.
-            Vector3 visualOrigin =
-                indexTip != null
-                    ? indexTip.position
-                    : pointerPose.position;
+            // Interaction SDK's ray visual uses a start offset rather than
+            // pretending that the system ray originates at the fingertip.
+            // This keeps the visible beam parallel to the actual aim ray while
+            // visually moving its start a little away from the wrist.
+            const float visualStartOffset = 0.075f;
+            const float visualEndOffset = 0.012f;
 
-            Vector3 target =
+            float distance =
                 hitSomething
-                    ? hit.point
-                    : pointerPose.position +
-                      pointerPose.forward * maxDistance;
+                    ? hit.distance
+                    : maxDistance;
 
-            line.SetPosition(0, visualOrigin);
-            line.SetPosition(1, target);
+            float startDistance =
+                Mathf.Min(
+                    visualStartOffset,
+                    distance * 0.25f);
+
+            float endDistance =
+                Mathf.Max(
+                    startDistance + 0.02f,
+                    distance - visualEndOffset);
+
+            Vector3 visualStart =
+                origin +
+                direction * startDistance;
+
+            Vector3 visualEnd =
+                origin +
+                direction * endDistance;
+
+            line.SetPosition(0, visualStart);
+            line.SetPosition(1, visualEnd);
         }
 
         return hovered;

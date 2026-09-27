@@ -26,6 +26,28 @@ public class MetaRayInteractableBridge : MonoBehaviour
         _interactable = interactable;
         _clickable = clickable;
 
+        BeginBind();
+    }
+
+    private void OnEnable()
+    {
+        // HUD buttons are created first and then their parent HUD is hidden
+        // while onboarding is shown. That disables this component before the
+        // deferred bind can run. When the HUD is later shown again, restart
+        // the SDK event binding.
+        BeginBind();
+    }
+
+    private void BeginBind()
+    {
+        if (!isActiveAndEnabled ||
+            _interactable == null ||
+            _clickable == null ||
+            _bound)
+        {
+            return;
+        }
+
         if (_bindRoutine != null)
             StopCoroutine(_bindRoutine);
 
@@ -40,8 +62,10 @@ public class MetaRayInteractableBridge : MonoBehaviour
         yield return null;
 
         if (_interactable == null ||
-            _clickable == null)
+            _clickable == null ||
+            !isActiveAndEnabled)
         {
+            _bindRoutine = null;
             yield break;
         }
 
@@ -83,6 +107,12 @@ public class MetaRayInteractableBridge : MonoBehaviour
 
     private void OnDisable()
     {
+        if (_bindRoutine != null)
+        {
+            StopCoroutine(_bindRoutine);
+            _bindRoutine = null;
+        }
+
         Unbind();
 
         if (_clickable != null)

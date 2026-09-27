@@ -110,15 +110,9 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _camera = Camera.main;
 
-        if (FindFirstObjectByType<XRPointerInteractor>() == null)
-        {
-            GameObject pointerObject =
-                new GameObject("XRPointerInteractor");
-            XRPointerInteractor pointer =
-                pointerObject.AddComponent<XRPointerInteractor>();
-            pointer.Initialize();
-        }
-
+        // Hand-ray aiming, selection and visuals are provided by the
+        // Meta Interaction SDK comprehensive rig already present in the scene.
+        // Do not create a parallel custom ray system here.
         BuildHud();
 
         if (PlayerPrefs.GetInt(OnboardingKey, 0) == 0)
@@ -2021,7 +2015,10 @@ public class AxisMonitoringUI : MonoBehaviour
             objectRoot.GetComponent<RectTransform>();
 
         BoxCollider collider =
-            objectRoot.AddComponent<BoxCollider>();
+            objectRoot.GetComponent<BoxCollider>();
+
+        if (collider == null)
+            collider = objectRoot.AddComponent<BoxCollider>();
 
         collider.size =
             new Vector3(
@@ -2032,13 +2029,71 @@ public class AxisMonitoringUI : MonoBehaviour
         collider.isTrigger = true;
 
         XRClickable clickable =
-            objectRoot.AddComponent<XRClickable>();
+            objectRoot.GetComponent<XRClickable>();
+
+        if (clickable == null)
+            clickable = objectRoot.AddComponent<XRClickable>();
 
         clickable.Initialize(
             targetImage,
             onClick,
             normalColor,
             hoverColor);
+
+        // Use Meta Interaction SDK for ray hit testing and pinch selection.
+        // ColliderSurface adapts this existing collider into an SDK ISurface.
+        Oculus.Interaction.Surfaces.ColliderSurface surface =
+            objectRoot.GetComponent<
+                Oculus.Interaction.Surfaces.ColliderSurface>();
+
+        if (surface == null)
+        {
+            surface =
+                objectRoot.AddComponent<
+                    Oculus.Interaction.Surfaces.ColliderSurface>();
+
+            surface.InjectAllColliderSurface(collider);
+        }
+
+        Oculus.Interaction.RayInteractable rayInteractable =
+            objectRoot.GetComponent<
+                Oculus.Interaction.RayInteractable>();
+
+        if (rayInteractable == null)
+        {
+            rayInteractable =
+                objectRoot.AddComponent<
+                    Oculus.Interaction.RayInteractable>();
+
+            rayInteractable.InjectAllRayInteractable(surface);
+        }
+
+        Oculus.Interaction.InteractableUnityEventWrapper events =
+            objectRoot.GetComponent<
+                Oculus.Interaction.InteractableUnityEventWrapper>();
+
+        if (events == null)
+        {
+            events =
+                objectRoot.AddComponent<
+                    Oculus.Interaction.InteractableUnityEventWrapper>();
+
+            events.InjectAllInteractableUnityEventWrapper(
+                rayInteractable);
+        }
+
+        events.WhenHover.RemoveAllListeners();
+        events.WhenUnhover.RemoveAllListeners();
+        events.WhenSelect.RemoveAllListeners();
+
+        events.WhenHover.AddListener(
+            () => clickable.SetHovered(true));
+
+        events.WhenUnhover.AddListener(
+            () => clickable.SetHovered(false));
+
+        events.WhenSelect.AddListener(
+            clickable.InvokeClick);
 
         return clickable;
     }

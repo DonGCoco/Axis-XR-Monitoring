@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 public class AxisMonitoringUI : MonoBehaviour
 {
-    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V5";
+    private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V6";
 
     private static readonly Color PanelColor =
         new Color(0.025f, 0.032f, 0.045f, 0.97f);
@@ -154,9 +154,9 @@ public class AxisMonitoringUI : MonoBehaviour
         CreateButtonCanvas(
             "HelpButton",
             _hudRoot.transform,
-            new Vector3(0.13f, -0.22f, 0.82f),
-            new Vector2(64f, 64f),
-            "?",
+            new Vector3(0.14f, -0.22f, 0.82f),
+            new Vector2(110f, 64f),
+            "Help",
             () => ShowOnboarding(0));
 
         _hudRoot.SetActive(false);
@@ -2068,32 +2068,20 @@ public class AxisMonitoringUI : MonoBehaviour
             rayInteractable.InjectAllRayInteractable(surface);
         }
 
-        Oculus.Interaction.InteractableUnityEventWrapper events =
+        MetaRayInteractableBridge bridge =
             objectRoot.GetComponent<
-                Oculus.Interaction.InteractableUnityEventWrapper>();
+                MetaRayInteractableBridge>();
 
-        if (events == null)
+        if (bridge == null)
         {
-            events =
+            bridge =
                 objectRoot.AddComponent<
-                    Oculus.Interaction.InteractableUnityEventWrapper>();
-
-            events.InjectAllInteractableUnityEventWrapper(
-                rayInteractable);
+                    MetaRayInteractableBridge>();
         }
 
-        events.WhenHover.RemoveAllListeners();
-        events.WhenUnhover.RemoveAllListeners();
-        events.WhenSelect.RemoveAllListeners();
-
-        events.WhenHover.AddListener(
-            () => clickable.SetHovered(true));
-
-        events.WhenUnhover.AddListener(
-            () => clickable.SetHovered(false));
-
-        events.WhenSelect.AddListener(
-            clickable.InvokeClick);
+        bridge.Configure(
+            rayInteractable,
+            clickable);
 
         return clickable;
     }

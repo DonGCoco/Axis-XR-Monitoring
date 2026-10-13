@@ -2,7 +2,7 @@
 
 ## What is included
 
-The existing **SampleScene** is the app entry point. Camera details now offer **Locate**, **Register position**, and **Locations**. Existing Meta Interaction SDK buttons/rays handle selection; no custom ray, controller-button mapper or extra Input Actions asset is needed. Keep Active Input Handling set to **Input System Package (New)**.
+The existing **SampleScene** is the app entry point. Camera details now offer **Locate**, **Register by QR**, and **Locations**. Existing Meta Interaction SDK buttons/rays handle selection; no custom ray, controller-button mapper or extra Input Actions asset is needed. Keep Active Input Handling set to **Input System Package (New)**.
 
 CameraSpatialAnchors uses the installed Meta XR Core 205 APIs: SaveAnchorAsync, LoadUnboundAnchorsAsync, UnboundAnchor.LocalizeAsync / TryGetPose / BindTo, and EraseAnchorsAsync. It stores camera ID → UUID in separate local Home and Lab registries, not raw Unity positions. A restored anchor must be localized and actively tracked before guidance is shown. The overview's priority layout never supplies physical positions.
 
@@ -12,19 +12,25 @@ CameraSpatialAnchors uses the installed Meta XR Core 205 APIs: SaveAnchorAsync, 
 2. Fetch origin. The implementation branch is `feature/camera-spatial-anchors`.
    If a local branch with that name already exists, switch to it and merge `origin/feature/camera-spatial-anchors` after committing/stashing local changes. Do not force reset.
 3. Open the project and **Assets/Scenes/SampleScene.unity**. Select only SampleScene in the active Android/Meta Quest build profile's Scene List (profile overrides may differ from the shared list).
-4. Build And Run to Quest 3. Allow requested spatial-data permission. Anchor support and passthrough boundary suppression are configured in the committed project/scene.
+4. Build And Run to Quest 3. Allow requested spatial-data permission. Anchor support and Boundary API support are enabled. Boundary suppression is requested only while Locate/Register-by-QR is active, not globally.
 5. The previously created SpatialAnchorTest and SpatialAnchorInput are not needed by this workflow. Do not add sample controller mapper blocks to SampleScene.
 
 ## Register at home
 
-1. Open Overview → select CAM_001 → Register position. The active site defaults to **Home**.
-2. Pick up the **right Quest controller**. A blue label follows its tracked position. Hand-ray/pinch UI continues to use the existing SDK; placement itself currently requires the right controller.
-3. Select **Save in 3 seconds**, then put the blue marker at the physical test target and hold still. The sampled position is the controller location at the end of the countdown, not its position when the button was clicked. If the controller is not tracked, saving is refused.
-4. Wait for creation and persistence. Success returns to details. Failed saves leave registration open with the error, and preserve a previously registered binding.
-5. Choose Locate. Guidance shows left/right/ahead/behind, 3D straight-line distance and a marker at the target. This is not an obstacle-aware route.
-6. Scan CAM_001: the existing API client obtains its data and opens details. Scan CAM_002 while targeting CAM_001: show mismatch and retain guidance without requesting CAM_002 details.
+1. Attach a QR code beside the physical camera (or test object). Its payload must match the app camera ID, e.g. **CAM_001**.
+2. Open Overview → select CAM_001 → **Register by QR**. The active site defaults to **Home**.
+3. Look at the attached QR. MRUK supplies a tracked 6DoF pose through the QR trackable's Unity Transform. That pose is used to create the camera's Meta Spatial Anchor; no controller placement is used.
+4. Wait for creation and persistence. Success returns to details. Failed saves leave registration open with the error and preserve a previously registered binding.
+5. Choose Locate. Guidance shows left/right/ahead/behind, straight-line distance and a marker at the saved target.
+6. Scan CAM_001 during Locate to confirm identity. Scanning another camera reports a mismatch and keeps CAM_001 as the active navigation target.
 
-For this first pilot use a reachable tabletop camera/QR substitute. Placement is manual; scanning a QR does not register a position. Do not climb or infer a ceiling camera position from the controller pose. Remote placement for inaccessible cameras is not implemented.
+The saved position is the QR marker position, so mount the QR in a fixed, repeatable place beside the camera. If the camera itself is high or inaccessible, staff do not need to touch it with a controller.
+
+### Multi-room use
+
+For a large passthrough MR test area, keep Boundary API support enabled but do not suppress the boundary globally. This branch requests boundary suppression only while the user is actively locating or registering a camera, and restores normal system boundary behavior when leaving that workflow.
+
+Meta multi-room support can preserve spatial understanding across multiple scanned rooms. For the pilot, keep one logical **Lab** site and register every camera QR in the real rooms where the cameras are installed. Straight-line guidance is not obstacle-aware, so do not treat the arrow as a route through walls, doors, stairs or glass. If the final demo spans several rooms, add room/zone labels (for example Lab A / Corridor / Lab B) before attempting route planning.
 
 ## Persistence, recovery and school setup
 
@@ -39,8 +45,8 @@ For this first pilot use a reachable tabletop camera/QR substitute. Placement is
 | Check | Expected result |
 |---|---|
 | First use without saved location | Position not registered; no direction/distance |
-| Registration with right controller untracked | Save refused; retry available |
-| Successful save and walk around | Target marker remains at registered location |
+| Registration QR not tracked | No position is saved until the QR is tracked |
+| Successful QR registration and walk around | Target marker remains at the registered QR location |
 | Exit/relaunch and restore | Same physical target recovers, or explicit unavailable state |
 | Tracking lost during Locate | Marker and direction/distance disappear |
 | Wrong QR during Locate | Mismatch; target remains active; no wrong-device details |

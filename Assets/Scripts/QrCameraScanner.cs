@@ -98,6 +98,31 @@ public class QrCameraScanner : MonoBehaviour
 
             bool isTracked = state.trackable.IsTracked;
 
+            // If registration mode was opened while this QR was already in
+            // view, consume its current MRUK pose immediately instead of
+            // requiring the user to look away and trigger TrackableAdded again.
+            if (isTracked)
+            {
+                if (_monitoringUI == null)
+                    _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
+
+                if (_monitoringUI != null)
+                {
+                    Pose qrPose =
+                        new Pose(
+                            state.trackable.transform.position,
+                            state.trackable.transform.rotation);
+
+                    if (_monitoringUI.TryRegisterCameraFromQr(
+                        state.payload,
+                        qrPose))
+                    {
+                        state.wasTracked = true;
+                        continue;
+                    }
+                }
+            }
+
             if (!isTracked)
             {
                 if (state.wasTracked)

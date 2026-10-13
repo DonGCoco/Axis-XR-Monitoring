@@ -209,6 +209,10 @@ public class QrCameraScanner : MonoBehaviour
         if (_monitoringUI == null)
             _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
 
+        // A navigation target must be confirmed before requesting/showing another device.
+        if (_monitoringUI != null && !_monitoringUI.AcceptCameraScan(payload))
+            return;
+
         // Keep the old panel only as a fallback if the new UX manager
         // could not be created.
         if (_monitoringUI == null && showStatusPanel)
@@ -240,17 +244,24 @@ public class QrCameraScanner : MonoBehaviour
             Debug.LogError(message);
 
             if (_monitoringUI != null)
-                _monitoringUI.ShowFriendlyError(message);
+                _monitoringUI.ShowCameraScanError(message);
             else if (_activePanel != null)
                 _activePanel.ShowError(payload, message);
 
             return;
         }
 
+        int scanVersion = _monitoringUI != null ? _monitoringUI.SpatialWorkflowVersion : 0;
         apiClient.GetCamera(
             payload,
             data =>
             {
+                if (_monitoringUI != null && !_monitoringUI.IsScanResponseCurrent(payload, scanVersion)) return;
+                if (data == null || data.cameraId != payload)
+                {
+                    if (_monitoringUI != null) _monitoringUI.ShowCameraScanError("Camera API identity does not match scanned QR.");
+                    return;
+                }
                 string temperature =
                     data.temperatureAvailable
                         ? $"{data.temperature:0.0} C"
@@ -271,11 +282,12 @@ public class QrCameraScanner : MonoBehaviour
             },
             error =>
             {
+                if (_monitoringUI != null && !_monitoringUI.IsScanResponseCurrent(payload, scanVersion)) return;
                 Debug.LogError(
                     $"CAMERA DATA FAILED | {payload} | {error}");
 
                 if (_monitoringUI != null)
-                    _monitoringUI.ShowFriendlyError(error);
+                    _monitoringUI.ShowCameraScanError(error);
                 else if (_activePanel != null)
                     _activePanel.ShowError(payload, error);
             });

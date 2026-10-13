@@ -1513,7 +1513,7 @@ public partial class AxisMonitoringUI : MonoBehaviour
 
         CreateButton(_detailsRoot.transform, "Locate", new Vector2(180f, 54f),
             new Vector2(-210f, -480f), () => BeginLocate(camera), AccentColor);
-        CreateButton(_detailsRoot.transform, "Register position", new Vector2(200f, 54f),
+        CreateButton(_detailsRoot.transform, "Register by QR", new Vector2(200f, 54f),
             new Vector2(0f, -480f), () => BeginRegistration(camera), PanelSoftColor);
         CreateButton(_detailsRoot.transform, "Locations", new Vector2(180f, 54f),
             new Vector2(210f, -480f), () => ShowLocationSettings(camera), PanelSoftColor);

@@ -130,7 +130,7 @@ public class QrCameraScanner : MonoBehaviour
                     state.lastTriggerTime = now;
 
                     Debug.Log($"QR RE-SCANNED: {state.payload}");
-                    HandleCameraPayload(state.payload);
+                    HandleCameraPayload(state.payload, state.trackable);
                 }
             }
         }
@@ -168,7 +168,7 @@ public class QrCameraScanner : MonoBehaviour
             existing.lastTriggerTime = Time.unscaledTime;
         }
 
-        HandleCameraPayload(payload);
+        HandleCameraPayload(payload, trackable);
     }
 
     private bool TryGetCameraPayload(
@@ -204,10 +204,25 @@ public class QrCameraScanner : MonoBehaviour
         return true;
     }
 
-    private void HandleCameraPayload(string payload)
+    private void HandleCameraPayload(string payload, MRUKTrackable trackable = null)
     {
         if (_monitoringUI == null)
             _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
+
+        // Registration uses the official MRUK QR trackable pose. MRUK keeps
+        // this Transform updated while the marker is tracked.
+        if (_monitoringUI != null &&
+            trackable != null &&
+            trackable.IsTracked)
+        {
+            Pose qrPose =
+                new Pose(
+                    trackable.transform.position,
+                    trackable.transform.rotation);
+
+            if (_monitoringUI.TryRegisterCameraFromQr(payload, qrPose))
+                return;
+        }
 
         // A navigation target must be confirmed before requesting/showing another device.
         if (_monitoringUI != null && !_monitoringUI.AcceptCameraScan(payload))

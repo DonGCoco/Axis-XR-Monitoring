@@ -14,8 +14,6 @@ public partial class AxisMonitoringUI
     private string _detailsCameraId;
     private CameraData _locateTarget;
     private CameraData _registerTarget;
-    private Coroutine _placementCountdown;
-    private OVRCameraRig _spatialRig;
     private bool _savingPosition;
     private string _scanNotice;
     private float _scanNoticeUntil;
@@ -24,7 +22,6 @@ public partial class AxisMonitoringUI
     private async void InitializeSpatialWorkflow()
     {
         _positions = gameObject.AddComponent<CameraSpatialAnchors>();
-        _spatialRig = FindFirstObjectByType<OVRCameraRig>();
         string site = PlayerPrefs.GetString("AXIS_ANCHOR_SITE", "Home");
         await _positions.SelectSiteAsync(site == "Lab" ? "Lab" : "Home");
     }
@@ -33,8 +30,7 @@ public partial class AxisMonitoringUI
     {
         if (_savingPosition) return;
         SpatialWorkflowVersion++;
-        if (_placementCountdown != null) StopCoroutine(_placementCountdown);
-        _placementCountdown = null;
+        SetSpatialBoundaryless(false);
         _locateTarget = null;
         _registerTarget = null;
         _scanNotice = null;
@@ -73,6 +69,7 @@ public partial class AxisMonitoringUI
         if (_savingPosition || _positions == null) return;
         EndSpatialWorkflow();
         _locateTarget = camera;
+        SetSpatialBoundaryless(true);
         BuildSpatialPanel("Locate " + camera.cameraId);
         _directionText = AddText(_spatialRoot.transform, "", 30, FontStyle.Bold, AccentColor,
             new Vector2(24f, -245f), new Vector2(-24f, -290f), TextAnchor.MiddleCenter);
@@ -112,39 +109,37 @@ public partial class AxisMonitoringUI
         if (_savingPosition || _positions == null || _positions.Busy) return;
         EndSpatialWorkflow();
         _registerTarget = camera;
+        SetSpatialBoundaryless(true);
         BuildSpatialPanel("Register " + camera.cameraId + " | " + _positions.Site);
-        _positionMarker = CreatePositionMarker();
-        CreateButton(_spatialRoot.transform, "Save in 3 seconds", new Vector2(240f, 52f), new Vector2(-130f, -310f),
-            () => { if (_placementCountdown == null) _placementCountdown = StartCoroutine(SavePlacement(camera)); }, AccentColor);
-        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(150f, 52f), new Vector2(170f, -310f),
+        _spatialText.text =
+            "Scan the QR attached beside " + camera.cameraId + ".\n" +
+            "Its tracked QR pose will become the saved physical camera position.\n" +
+            "No controller placement is required.";
+        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(160f, 52f), new Vector2(0f, -310f),
             () => ShowDetails(camera), PanelSoftColor);
     }
-    private bool TryGetPlacementPose(out Pose pose)
+
+    // QrCameraScanner calls this with the Meta MRUK trackable pose.
+    // Return true when the QR was consumed by registration mode.
+    public bool TryRegisterCameraFromQr(string id, Pose qrPose)
     {
-        pose = default;
-        if (!_spatialRig || !_spatialRig.rightHandAnchor ||
-            !OVRInput.GetControllerPositionTracked(OVRInput.Controller.RTouch) ||
-            !OVRInput.GetControllerOrientationTracked(OVRInput.Controller.RTouch)) return false;
-        var hand = _spatialRig.rightHandAnchor;
-        pose = new Pose(hand.position, hand.rotation);
+        if (_registerTarget == null)
+            return false;
+
+        if (_savingPosition)
+            return true;
+
+        if (id != _registerTarget.cameraId)
+        {
+            _scanNotice = "Wrong camera: " + id + ". Scan " + _registerTarget.cameraId + " to register its position.";
+            _scanNoticeUntil = Time.unscaledTime + 5f;
+            return true;
+        }
+
+        _scanNotice = "QR confirmed. Saving spatial anchor at the tracked QR position…";
+        _scanNoticeUntil = Time.unscaledTime + 8f;
+        SavePosition(_registerTarget, qrPose);
         return true;
-    }
-    private IEnumerator SavePlacement(CameraData camera)
-    {
-        for (int seconds = 3; seconds > 0; seconds--)
-        {
-            _scanNotice = "Saving in " + seconds + "… Hold the marker at the camera.";
-            _scanNoticeUntil = Time.unscaledTime + 1.1f;
-            yield return new WaitForSecondsRealtime(1f);
-        }
-        _placementCountdown = null;
-        if (!TryGetPlacementPose(out var pose))
-        {
-            _scanNotice = "Right controller is not tracked. Try again.";
-            _scanNoticeUntil = Time.unscaledTime + 4f;
-            yield break;
-        }
-        SavePosition(camera, pose);
     }
     private async void SavePosition(CameraData camera, Pose pose)
     {
@@ -206,11 +201,10 @@ public partial class AxisMonitoringUI
         if (_positionMarker && _camera) _positionMarker.transform.rotation = _camera.transform.rotation;
         if (_registerTarget != null)
         {
-            bool tracked = TryGetPlacementPose(out var pose);
-            if (_positionMarker) { _positionMarker.SetActive(tracked); if (tracked) _positionMarker.transform.position = pose.position; }
-            _spatialText.text = _savingPosition ? _positions.Status :
-                $"Site: {_positions.Site}\nPlace the right controller's blue marker at the camera.\nSelect Save, then hold it there for 3 seconds.\n" +
-                (tracked ? "Controller tracked" : "Pick up the right Quest controller");
+            _spatialText.text = _savingPosition
+                ? _positions.Status
+                : $"Site: {_positions.Site}\nScan the QR attached beside {_registerTarget.cameraId}.\n" +
+                  "The Meta QR trackable pose will be saved as this camera's spatial anchor.";
         }
         else if (_locateTarget != null)
         {
@@ -237,5 +231,19 @@ public partial class AxisMonitoringUI
         else _spatialText.text = $"Active site: {_positions.Site}\n{_positions.Status}\nSwitch to Lab and register again at school.";
         if (_scanNotice != null && Time.unscaledTime < _scanNoticeUntil) _spatialText.text += "\n" + _scanNotice;
     }
-    private void OnDestroy() { if (_spatialRoot) Destroy(_spatialRoot); if (_positionMarker) Destroy(_positionMarker); }
+    private void SetSpatialBoundaryless(bool suppressed)
+    {
+        // Use Meta's official Boundary API contextually: only spatial
+        // registration/locate mode requests boundary suppression. The normal
+        // dashboard keeps the system boundary behavior unchanged.
+        if (OVRManager.instance != null)
+            OVRManager.instance.shouldBoundaryVisibilityBeSuppressed = suppressed;
+    }
+
+    private void OnDestroy()
+    {
+        SetSpatialBoundaryless(false);
+        if (_spatialRoot) Destroy(_spatialRoot);
+        if (_positionMarker) Destroy(_positionMarker);
+    }
 }

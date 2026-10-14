@@ -38,6 +38,7 @@ public class CameraData
 
     public bool storageAvailable;
     public bool emmcHealthAvailable;
+    public bool emmcWearAvailable;
     public int emmcWear;
 
     public bool powerAvailable;

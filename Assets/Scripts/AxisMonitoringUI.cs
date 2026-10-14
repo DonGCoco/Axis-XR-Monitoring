@@ -1547,12 +1547,12 @@ public class AxisMonitoringUI : MonoBehaviour
         AddSectionLabel("LIVE VAPIX TELEMETRY", -128f);
 
         string mainCpu =
-            $"Main {FormatAxisTemperature(camera.mainTemperatureAvailable, camera.mainTemperature)}" +
-            $" · CPU {FormatAxisTemperature(camera.cpuTemperatureAvailable, camera.cpuTemperature)}";
+            $"{FormatAxisTemperature(camera.mainTemperatureAvailable, camera.mainTemperature)}" +
+            $" · {FormatAxisTemperature(camera.cpuTemperatureAvailable, camera.cpuTemperature)}";
 
         string sensorOptics =
-            $"Sensor {FormatAxisTemperature(camera.imageSensorTemperatureAvailable, camera.imageSensorTemperature)}" +
-            $" · Optics {FormatAxisTemperature(camera.opticsTemperatureAvailable, camera.opticsTemperature)}";
+            $"{FormatAxisTemperature(camera.imageSensorTemperatureAvailable, camera.imageSensorTemperature)}" +
+            $" · {FormatAxisTemperature(camera.opticsTemperatureAvailable, camera.opticsTemperature)}";
 
         string storage = "N/A";
         if (camera.storageAvailable)

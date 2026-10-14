@@ -6,8 +6,10 @@ using UnityEngine.UI;
 public partial class AxisMonitoringUI
 {
     private CameraSpatialAnchors _positions;
+    private CameraNavigationPath _navigationPath;
     private GameObject _spatialRoot;
     private GameObject _positionMarker;
+    private Text _positionMarkerLabel;
     private Text _spatialText;
     private Text _directionText;
     private Text _locationStatus;
@@ -17,11 +19,15 @@ public partial class AxisMonitoringUI
     private bool _savingPosition;
     private string _scanNotice;
     private float _scanNoticeUntil;
+    private float _routeRefreshAt;
+    private bool _routeAvailable;
+    private CameraNavigationPath.Route _route;
     public int SpatialWorkflowVersion { get; private set; }
 
     private async void InitializeSpatialWorkflow()
     {
         _positions = gameObject.AddComponent<CameraSpatialAnchors>();
+        _navigationPath = gameObject.AddComponent<CameraNavigationPath>();
 
         // This is a passthrough-first MR app. Keep Meta's official Boundary API
         // suppression active for the whole app session so users can walk between
@@ -43,8 +49,11 @@ public partial class AxisMonitoringUI
         if (_positionMarker) Destroy(_positionMarker);
         _spatialRoot = null;
         _positionMarker = null;
+        _positionMarkerLabel = null;
         _spatialText = null;
         _directionText = null;
+        _routeAvailable = false;
+        _routeRefreshAt = 0f;
     }
 
     private void BuildSpatialPanel(string title)
@@ -62,8 +71,7 @@ public partial class AxisMonitoringUI
     {
         // Reuse the app's UI shader instead of relying on a runtime-only shader that may be stripped.
         var marker = CreateCanvas("CameraPositionMarker", new Vector2(110f, 60f), null, Vector3.zero, AccentColor);
-        string id = _locateTarget != null ? _locateTarget.cameraId : _registerTarget.cameraId;
-        AddText(marker.transform, id, 18, FontStyle.Bold, TextPrimary,
+        _positionMarkerLabel = AddText(marker.transform, "NEXT", 18, FontStyle.Bold, TextPrimary,
             new Vector2(4f, -4f), new Vector2(-4f, -56f), TextAnchor.MiddleCenter);
         marker.SetActive(false);
         return marker;
@@ -74,6 +82,9 @@ public partial class AxisMonitoringUI
         if (_savingPosition || _positions == null) return;
         EndSpatialWorkflow();
         _locateTarget = camera;
+        _routeAvailable = false;
+        _routeRefreshAt = 0f;
+        _navigationPath?.EnsureReady();
         SetSpatialBoundaryless(true);
         BuildSpatialPanel("Locate " + camera.cameraId);
         _directionText = AddText(_spatialRoot.transform, "", 30, FontStyle.Bold, AccentColor,
@@ -214,9 +225,10 @@ public partial class AxisMonitoringUI
         else if (_locateTarget != null)
         {
             bool found = _positions.TryGetPosition(_locateTarget.cameraId, out var target);
-            if (_positionMarker) { _positionMarker.SetActive(found); if (found) _positionMarker.transform.position = target; }
+
             if (!found)
             {
+                if (_positionMarker) _positionMarker.SetActive(false);
                 _directionText.text = "Position unavailable";
                 _spatialText.text = _positions.Busy ? _positions.Status :
                     (_positions.HasBinding(_locateTarget.cameraId) ? "Tracking / localization unavailable. Look around, or retry restore in Locations." :
@@ -224,13 +236,78 @@ public partial class AxisMonitoringUI
             }
             else
             {
-                Vector3 relative = _camera.transform.InverseTransformDirection(target - _camera.transform.position);
-                float angle = Mathf.Atan2(relative.x, relative.z) * Mathf.Rad2Deg;
-                float distance = Vector3.Distance(target, _camera.transform.position);
-                string direction = Mathf.Abs(angle) < 15 ? "↑ Ahead" : Mathf.Abs(angle) > 150 ? "↓ Behind you" : angle > 0 ? "→ Turn right" : "← Turn left";
-                _directionText.text = $"{direction}  |  {distance:0.0} m";
-                _spatialText.text = $"{_locateTarget.cameraId} | {_positions.Site}\nStraight-line guidance\n" +
-                    (distance < 0.8f ? "Near target. " : "Follow the blue marker. ") + "Scan its QR to confirm identity.";
+                if (_navigationPath == null)
+                {
+                    if (_positionMarker) _positionMarker.SetActive(false);
+                    _directionText.text = "Navigation unavailable";
+                    _spatialText.text = "MRUK SceneNavigation service is unavailable.";
+                }
+                else
+                {
+                    _navigationPath.EnsureReady();
+
+                    if (Time.unscaledTime >= _routeRefreshAt)
+                    {
+                        _routeRefreshAt = Time.unscaledTime + 0.25f;
+                        _routeAvailable = _navigationPath.TryGetRoute(
+                            _camera.transform.position,
+                            target,
+                            out _route);
+                    }
+
+                    if (!_routeAvailable)
+                    {
+                        if (_positionMarker) _positionMarker.SetActive(false);
+                        _directionText.text =
+                            _navigationPath.State == CameraNavigationPath.NavigationState.Ready
+                                ? "No mapped route"
+                                : "Preparing route";
+                        _spatialText.text =
+                            $"{_locateTarget.cameraId} | {_positions.Site}\n" +
+                            _navigationPath.Status;
+                    }
+                    else
+                    {
+                        bool nearTarget = _route.totalDistance < 0.8f;
+                        Vector3 guidePoint =
+                            nearTarget
+                                ? target
+                                : _route.nextWaypoint + Vector3.up * 1.15f;
+
+                        if (_positionMarker)
+                        {
+                            _positionMarker.SetActive(true);
+                            _positionMarker.transform.position = guidePoint;
+                        }
+
+                        if (_positionMarkerLabel)
+                            _positionMarkerLabel.text =
+                                nearTarget ? _locateTarget.cameraId : "NEXT";
+
+                        Vector3 relative =
+                            _camera.transform.InverseTransformDirection(
+                                guidePoint - _camera.transform.position);
+                        relative.y = 0f;
+
+                        float angle =
+                            Mathf.Atan2(relative.x, relative.z) * Mathf.Rad2Deg;
+
+                        string direction =
+                            Mathf.Abs(angle) < 15 ? "↑ Ahead" :
+                            Mathf.Abs(angle) > 150 ? "↓ Behind you" :
+                            angle > 0 ? "→ Turn right" : "← Turn left";
+
+                        _directionText.text =
+                            $"{direction}  |  {_route.totalDistance:0.0} m";
+
+                        _spatialText.text =
+                            $"{_locateTarget.cameraId} | {_positions.Site}\n" +
+                            "MRUK SceneNavigation route\n" +
+                            (nearTarget
+                                ? "Near target. Scan its QR to confirm identity."
+                                : "Follow the NEXT marker; the route avoids mapped walls.");
+                    }
+                }
             }
         }
         else _spatialText.text = $"Active site: {_positions.Site}\n{_positions.Status}\nSwitch to Lab and register again at school.";
@@ -238,9 +315,8 @@ public partial class AxisMonitoringUI
     }
     private void SetSpatialBoundaryless(bool suppressed)
     {
-        // Use Meta's official Boundary API contextually: only spatial
-        // registration/locate mode requests boundary suppression. The normal
-        // dashboard keeps the system boundary behavior unchanged.
+        // Keep Meta's official Boundary API suppression active for this
+        // passthrough-first MR app so users can walk between mapped rooms.
         if (OVRManager.instance != null)
             OVRManager.instance.shouldBoundaryVisibilityBeSuppressed = suppressed;
     }

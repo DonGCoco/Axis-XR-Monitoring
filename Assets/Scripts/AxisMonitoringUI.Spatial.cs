@@ -22,6 +22,12 @@ public partial class AxisMonitoringUI
     private async void InitializeSpatialWorkflow()
     {
         _positions = gameObject.AddComponent<CameraSpatialAnchors>();
+
+        // This is a passthrough-first MR app. Keep Meta's official Boundary API
+        // suppression active for the whole app session so users can walk between
+        // rooms before, during, and after camera registration.
+        SetSpatialBoundaryless(true);
+
         string site = PlayerPrefs.GetString("AXIS_ANCHOR_SITE", "Home");
         await _positions.SelectSiteAsync(site == "Lab" ? "Lab" : "Home");
     }
@@ -30,7 +36,6 @@ public partial class AxisMonitoringUI
     {
         if (_savingPosition) return;
         SpatialWorkflowVersion++;
-        SetSpatialBoundaryless(false);
         _locateTarget = null;
         _registerTarget = null;
         _scanNotice = null;

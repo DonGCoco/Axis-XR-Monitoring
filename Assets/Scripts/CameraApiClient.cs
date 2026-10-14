@@ -608,6 +608,7 @@ public class CameraApiClient : MonoBehaviour
                     CultureInfo.InvariantCulture,
                     out int wear))
             {
+                camera.emmcWearAvailable = true;
                 camera.emmcWear = wear;
             }
 

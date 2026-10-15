@@ -1537,6 +1537,12 @@ public partial class AxisMonitoringUI : MonoBehaviour
 
     private void BuildHealthyDetails(CameraData camera)
     {
+        if (camera.vapixTelemetry)
+        {
+            BuildVapixHealthyDetails(camera);
+            return;
+        }
+
         AddSectionLabel("HEALTH", -128f);
 
         string temperature =

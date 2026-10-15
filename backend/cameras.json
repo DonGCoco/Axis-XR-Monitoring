@@ -1,0 +1,23 @@
+{
+  "CAM_001": {
+    "enabled": true,
+    "url": "https://169.254.96.234",
+    "username": "camera01",
+    "modelHint": "AXIS Q1728",
+    "displayName": "AXIS Q1728"
+  },
+  "CAM_002": {
+    "enabled": true,
+    "url": "https://169.254.52.210",
+    "username": "camera02",
+    "modelHint": "AXIS Q1809-LE",
+    "displayName": "AXIS Q1809-LE"
+  },
+  "CAM_003": {
+    "enabled": false,
+    "url": "",
+    "username": "camera03",
+    "modelHint": "",
+    "displayName": "CAM_003"
+  }
+}

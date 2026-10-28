@@ -98,6 +98,31 @@ public class QrCameraScanner : MonoBehaviour
 
             bool isTracked = state.trackable.IsTracked;
 
+            // If registration mode was opened while this QR was already in
+            // view, consume its current MRUK pose immediately instead of
+            // requiring the user to look away and trigger TrackableAdded again.
+            if (isTracked)
+            {
+                if (_monitoringUI == null)
+                    _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
+
+                if (_monitoringUI != null)
+                {
+                    Pose qrPose =
+                        new Pose(
+                            state.trackable.transform.position,
+                            state.trackable.transform.rotation);
+
+                    if (_monitoringUI.TryRegisterCameraFromQr(
+                        state.payload,
+                        qrPose))
+                    {
+                        state.wasTracked = true;
+                        continue;
+                    }
+                }
+            }
+
             if (!isTracked)
             {
                 if (state.wasTracked)
@@ -130,7 +155,7 @@ public class QrCameraScanner : MonoBehaviour
                     state.lastTriggerTime = now;
 
                     Debug.Log($"QR RE-SCANNED: {state.payload}");
-                    HandleCameraPayload(state.payload);
+                    HandleCameraPayload(state.payload, state.trackable);
                 }
             }
         }
@@ -168,7 +193,7 @@ public class QrCameraScanner : MonoBehaviour
             existing.lastTriggerTime = Time.unscaledTime;
         }
 
-        HandleCameraPayload(payload);
+        HandleCameraPayload(payload, trackable);
     }
 
     private bool TryGetCameraPayload(
@@ -204,10 +229,29 @@ public class QrCameraScanner : MonoBehaviour
         return true;
     }
 
-    private void HandleCameraPayload(string payload)
+    private void HandleCameraPayload(string payload, MRUKTrackable trackable = null)
     {
         if (_monitoringUI == null)
             _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
+
+        // Registration uses the official MRUK QR trackable pose. MRUK keeps
+        // this Transform updated while the marker is tracked.
+        if (_monitoringUI != null &&
+            trackable != null &&
+            trackable.IsTracked)
+        {
+            Pose qrPose =
+                new Pose(
+                    trackable.transform.position,
+                    trackable.transform.rotation);
+
+            if (_monitoringUI.TryRegisterCameraFromQr(payload, qrPose))
+                return;
+        }
+
+        // A navigation target must be confirmed before requesting/showing another device.
+        if (_monitoringUI != null && !_monitoringUI.AcceptCameraScan(payload))
+            return;
 
         // Keep the old panel only as a fallback if the new UX manager
         // could not be created.
@@ -240,17 +284,24 @@ public class QrCameraScanner : MonoBehaviour
             Debug.LogError(message);
 
             if (_monitoringUI != null)
-                _monitoringUI.ShowFriendlyError(message);
+                _monitoringUI.ShowCameraScanError(message);
             else if (_activePanel != null)
                 _activePanel.ShowError(payload, message);
 
             return;
         }
 
+        int scanVersion = _monitoringUI != null ? _monitoringUI.SpatialWorkflowVersion : 0;
         apiClient.GetCamera(
             payload,
             data =>
             {
+                if (_monitoringUI != null && !_monitoringUI.IsScanResponseCurrent(payload, scanVersion)) return;
+                if (data == null || data.cameraId != payload)
+                {
+                    if (_monitoringUI != null) _monitoringUI.ShowCameraScanError("Camera API identity does not match scanned QR.");
+                    return;
+                }
                 string temperature =
                     data.temperatureAvailable
                         ? $"{data.temperature:0.0} C"
@@ -271,11 +322,12 @@ public class QrCameraScanner : MonoBehaviour
             },
             error =>
             {
+                if (_monitoringUI != null && !_monitoringUI.IsScanResponseCurrent(payload, scanVersion)) return;
                 Debug.LogError(
                     $"CAMERA DATA FAILED | {payload} | {error}");
 
                 if (_monitoringUI != null)
-                    _monitoringUI.ShowFriendlyError(error);
+                    _monitoringUI.ShowCameraScanError(error);
                 else if (_activePanel != null)
                     _activePanel.ShowError(payload, error);
             });

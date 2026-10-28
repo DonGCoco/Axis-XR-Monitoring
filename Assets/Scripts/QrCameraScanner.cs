@@ -6,6 +6,9 @@ using UnityEngine;
 
 public class QrCameraScanner : MonoBehaviour
 {
+    public event Action<string, MRUKTrackable> CameraQrSelected;
+    public event Action<MRUKTrackable> CameraQrRemoved;
+
     [SerializeField] private CameraApiClient apiClient;
     [SerializeField] private bool showStatusPanel = true;
 
@@ -130,7 +133,7 @@ public class QrCameraScanner : MonoBehaviour
                     state.lastTriggerTime = now;
 
                     Debug.Log($"QR RE-SCANNED: {state.payload}");
-                    HandleCameraPayload(state.payload);
+                    HandleCameraPayload(state.payload, state.trackable);
                 }
             }
         }
@@ -168,7 +171,7 @@ public class QrCameraScanner : MonoBehaviour
             existing.lastTriggerTime = Time.unscaledTime;
         }
 
-        HandleCameraPayload(payload);
+        HandleCameraPayload(payload, trackable);
     }
 
     private bool TryGetCameraPayload(
@@ -204,8 +207,10 @@ public class QrCameraScanner : MonoBehaviour
         return true;
     }
 
-    private void HandleCameraPayload(string payload)
+    private void HandleCameraPayload(string payload, MRUKTrackable trackable)
     {
+        CameraQrSelected?.Invoke(payload, trackable);
+
         if (_monitoringUI == null)
             _monitoringUI = AxisMonitoringUI.EnsureExists(apiClient);
 
@@ -291,6 +296,8 @@ public class QrCameraScanner : MonoBehaviour
 
         _trackedQrs.RemoveAll(
             state => state.trackable == trackable);
+
+        CameraQrRemoved?.Invoke(trackable);
 
         Debug.Log("Axis camera QR removed.");
     }

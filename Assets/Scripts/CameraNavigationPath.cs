@@ -1,13 +1,13 @@
-using System;
-using System.Collections.Generic;
+using System.Collections;
+using System.Reflection;
+using Meta.XR.MRUtilityKit;
 using UnityEngine;
+using UnityEngine.AI;
 
 /// <summary>
-/// Lightweight waypoint navigation for the Axis XR prototype.
-/// It replaces MRUK room scanning/NavMesh with a small graph calibrated once
-/// in the lab. Waypoints are stored in a stable horizontal room frame defined
-/// by the persistent positions of CAM_001 and CAM_002. QR/anchor rotation is
-/// deliberately ignored so orientation drift cannot rotate the whole route.
+/// Thin app layer over Meta MRUK SceneNavigation + Unity NavMesh.
+/// Camera positions remain OVRSpatialAnchors; this service only turns the
+/// Quest room model into a walkable route so Locate does not point through walls.
 /// </summary>
 public sealed class CameraNavigationPath : MonoBehaviour
 {
@@ -28,526 +28,273 @@ public sealed class CameraNavigationPath : MonoBehaviour
         public int cornerCount;
     }
 
-    [Serializable]
-    private class WaypointNode
-    {
-        public int id;
-        public Vector3 localPosition;
-    }
+    private SceneNavigation _sceneNavigation;
+    private readonly NavMeshPath _path = new NavMeshPath();
+    private bool _initializationStarted;
+    private bool _building;
 
-    [Serializable]
-    private class WaypointEdge
-    {
-        public int a;
-        public int b;
-    }
-
-    [Serializable]
-    private class WaypointGraph
-    {
-        public List<WaypointNode> nodes = new List<WaypointNode>();
-        public List<WaypointEdge> edges = new List<WaypointEdge>();
-    }
-
-    private const string ReferenceCameraA = "CAM_001";
-    private const string ReferenceCameraB = "CAM_002";
-    private const string GraphKeyPrefix = "AXIS_WAYPOINT_GRAPH_V2_";
-    private const float RevisitMergeRadius = 0.55f;
-    private const float SkipNearStartRadius = 0.65f;
-
-    private CameraSpatialAnchors _positions;
-    private WaypointGraph _graph = new WaypointGraph();
-    private WaypointGraph _calibrationGraph;
-    private int _lastCalibrationNode = -1;
-    private string _loadedSite;
+    // Space Setup may be completed after the first launch.
+    // A manual retry avoids restarting the app just to load the new scene model.
 
     public NavigationState State { get; private set; } = NavigationState.Idle;
-    public string Status { get; private set; } = "Waypoint route not loaded";
-    public bool IsCalibrating => _calibrationGraph != null;
-    public int CalibrationPointCount =>
-        _calibrationGraph != null && _calibrationGraph.nodes != null
-            ? _calibrationGraph.nodes.Count
-            : 0;
-
-    public void Initialize(CameraSpatialAnchors positions)
-    {
-        _positions = positions;
-        RefreshGraphForCurrentSite();
-        EnsureReady();
-    }
+    public string Status { get; private set; } = "Navigation map not loaded";
 
     public void EnsureReady()
     {
-        if (_positions == null)
-            _positions = FindFirstObjectByType<CameraSpatialAnchors>();
-
-        if (_positions == null)
-        {
-            State = NavigationState.Failed;
-            Status = "Camera spatial anchors are unavailable.";
+        if (_initializationStarted || State == NavigationState.Ready)
             return;
-        }
 
-        if (string.IsNullOrWhiteSpace(_positions.Site))
-        {
-            State = NavigationState.LoadingScene;
-            Status = "Waiting for the active location site...";
-            return;
-        }
-
-        RefreshGraphForCurrentSite();
-
-        if (_graph == null ||
-            _graph.nodes == null ||
-            _graph.edges == null ||
-            _graph.nodes.Count < 2 ||
-            _graph.edges.Count < 1)
-        {
-            State = NavigationState.SceneSetupRequired;
-            Status = "Waypoint route is not calibrated for " + _positions.Site + ".";
-            return;
-        }
-
-        if (!TryGetReferenceFrame(out _, out _, out _))
-        {
-            State = NavigationState.LoadingScene;
-            Status = "Restore/register CAM_001 and CAM_002 before using the route.";
-            return;
-        }
-
-        State = NavigationState.Ready;
-        Status = "Waypoint navigation ready";
+        _initializationStarted = true;
+        StartCoroutine(InitializeWhenMrukIsReady());
     }
 
-    public bool TryGetRoute(
-        Vector3 headsetPosition,
-        Vector3 cameraAnchorPosition,
-        out Route route)
+    public void ReloadScene()
+    {
+        if (_building || State == NavigationState.LoadingScene)
+            return;
+
+        if (!_initializationStarted)
+        {
+            EnsureReady();
+            return;
+        }
+
+        if (MRUK.Instance == null)
+        {
+            State = NavigationState.LoadingScene;
+            Status = "MRUK is not ready yet.";
+            return;
+        }
+
+        State = NavigationState.LoadingScene;
+        LoadSceneFromDevice();
+    }
+
+    private IEnumerator InitializeWhenMrukIsReady()
+    {
+        Status = "Waiting for Meta MRUK...";
+        while (MRUK.Instance == null)
+            yield return null;
+
+        ConfigureSceneNavigation();
+
+        MRUK.Instance.RegisterSceneLoadedCallback(OnSceneLoaded);
+
+        if (MRUK.Instance.Rooms != null && MRUK.Instance.Rooms.Count > 0)
+        {
+            BuildNavMesh();
+            yield break;
+        }
+
+        LoadSceneFromDevice();
+    }
+
+    private void ConfigureSceneNavigation()
+    {
+        _sceneNavigation = GetComponent<SceneNavigation>();
+        if (_sceneNavigation == null)
+            _sceneNavigation = gameObject.AddComponent<SceneNavigation>();
+
+        // Match Meta's SceneNavigation sample pattern, but build explicitly
+        // after the Quest scene model is available.
+        _sceneNavigation.BuildOnSceneLoaded = MRUK.RoomFilter.None;
+        _sceneNavigation.UseSceneData = true;
+        _sceneNavigation.CustomAgent = false;
+        _sceneNavigation.NavigableSurfaces = MRUKAnchor.SceneLabels.FLOOR;
+        _sceneNavigation.SceneObstacles =
+            MRUKAnchor.SceneLabels.CEILING |
+            MRUKAnchor.SceneLabels.WALL_FACE |
+            MRUKAnchor.SceneLabels.TABLE |
+            MRUKAnchor.SceneLabels.COUCH |
+            MRUKAnchor.SceneLabels.DOOR_FRAME |
+            MRUKAnchor.SceneLabels.WINDOW_FRAME |
+            MRUKAnchor.SceneLabels.OTHER |
+            MRUKAnchor.SceneLabels.STORAGE |
+            MRUKAnchor.SceneLabels.BED |
+            MRUKAnchor.SceneLabels.SCREEN |
+            MRUKAnchor.SceneLabels.LAMP |
+            MRUKAnchor.SceneLabels.PLANT |
+            MRUKAnchor.SceneLabels.WALL_ART |
+            MRUKAnchor.SceneLabels.INVISIBLE_WALL_FACE;
+        _sceneNavigation.Layers = 1 << 0;
+
+        // SDK 205 serializes this field in Meta's official SceneNavigation
+        // prefab but does not expose it as a documented public property.
+        // Enable it so a NavMesh can connect mapped rooms through doorways.
+        FieldInfo connectRoomsField =
+            typeof(SceneNavigation).GetField(
+                "connectRoomsInNavMesh",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        connectRoomsField?.SetValue(_sceneNavigation, true);
+
+        _sceneNavigation.OnNavMeshInitialized.RemoveListener(OnNavMeshInitialized);
+        _sceneNavigation.OnNavMeshInitialized.AddListener(OnNavMeshInitialized);
+    }
+
+    private async void LoadSceneFromDevice()
+    {
+        if (!this || MRUK.Instance == null)
+            return;
+
+        State = NavigationState.LoadingScene;
+        Status = "Loading the Quest room map for wall-aware navigation...";
+
+        MRUK.LoadDeviceResult result;
+        try
+        {
+            // If the lab has not been mapped yet, Meta opens Space Setup.
+            // The scene model is needed only for pathfinding, not for camera anchors.
+            result = await MRUK.Instance.LoadSceneFromDevice(
+                requestSceneCaptureIfNoDataFound: true,
+                removeMissingRooms: true,
+                sceneModel: MRUK.SceneModel.V1);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogException(ex);
+            State = NavigationState.Failed;
+            Status = "Could not load the Quest room map.";
+            return;
+        }
+
+        if (!this)
+            return;
+
+        if (result == MRUK.LoadDeviceResult.Success)
+        {
+            BuildNavMesh();
+            return;
+        }
+
+        if (result == MRUK.LoadDeviceResult.NoRoomsFound ||
+            result == MRUK.LoadDeviceResult.NoScenePermission)
+        {
+            State = NavigationState.SceneSetupRequired;
+            Status = "Space Setup is required once for wall-aware navigation.";
+            return;
+        }
+
+        State = NavigationState.Failed;
+        Status = "Room map load failed: " + result;
+    }
+
+    private void OnSceneLoaded()
+    {
+        if (!this || MRUK.Instance == null ||
+            MRUK.Instance.Rooms == null || MRUK.Instance.Rooms.Count == 0)
+        {
+            return;
+        }
+
+        BuildNavMesh();
+    }
+
+    private void BuildNavMesh()
+    {
+        if (_sceneNavigation == null || _building || State == NavigationState.Ready)
+            return;
+
+        _building = true;
+        State = NavigationState.BuildingNavMesh;
+        Status = "Building a walkable route from the mapped rooms...";
+
+        try
+        {
+            _sceneNavigation.BuildSceneNavMesh();
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogException(ex);
+            _building = false;
+            State = NavigationState.Failed;
+            Status = "Could not build the walkable route map.";
+        }
+    }
+
+    private void OnNavMeshInitialized()
+    {
+        _building = false;
+        State = NavigationState.Ready;
+        int rooms = MRUK.Instance != null && MRUK.Instance.Rooms != null
+            ? MRUK.Instance.Rooms.Count
+            : 0;
+        Status = "NavMesh ready | mapped rooms: " + rooms;
+    }
+
+    public bool TryGetRoute(Vector3 headsetPosition, Vector3 cameraAnchorPosition, out Route route)
     {
         route = default;
-        EnsureReady();
 
         if (State != NavigationState.Ready)
             return false;
 
-        if (!TryGetReferenceFrame(out Vector3 origin, out Vector3 xAxis, out Vector3 zAxis))
+        if (!NavMesh.SamplePosition(
+                headsetPosition,
+                out NavMeshHit startHit,
+                3.0f,
+                NavMesh.AllAreas))
         {
-            State = NavigationState.LoadingScene;
-            Status = "CAM_001 / CAM_002 reference positions are not currently tracked.";
+            Status = "Move onto a mapped walkable area.";
             return false;
         }
 
-        int count = _graph.nodes.Count;
-        var worldPositions = new Vector3[count];
-
-        for (int i = 0; i < count; i++)
-            worldPositions[i] = LocalToWorld(origin, xAxis, zAxis, _graph.nodes[i].localPosition);
-
-        int startNode = FindNearestNode(headsetPosition, worldPositions);
-        int endNode = FindNearestNode(cameraAnchorPosition, worldPositions);
-
-        if (startNode < 0 || endNode < 0)
+        // Camera anchors are normally above the floor, so project the target
+        // to the nearest walkable point below/near the physical camera.
+        if (!NavMesh.SamplePosition(
+                cameraAnchorPosition,
+                out NavMeshHit endHit,
+                4.0f,
+                NavMesh.AllAreas))
         {
-            Status = "Could not connect to the waypoint route.";
+            Status = "The camera is outside the mapped walkable area.";
             return false;
         }
 
-        List<int> nodePath = FindShortestPath(startNode, endNode, worldPositions);
-        if (nodePath == null || nodePath.Count == 0)
+        if (!NavMesh.CalculatePath(
+                startHit.position,
+                endHit.position,
+                NavMesh.AllAreas,
+                _path) ||
+            _path.status != NavMeshPathStatus.PathComplete ||
+            _path.corners == null ||
+            _path.corners.Length < 2)
         {
-            Status = "No waypoint route connects this area to the camera.";
+            Status = "No complete route. Verify mapped floors / doorway connections in Space Setup.";
             return false;
         }
 
-        float totalDistance = HorizontalDistance(headsetPosition, worldPositions[startNode]);
+        float totalDistance = 0f;
+        for (int i = 1; i < _path.corners.Length; i++)
+            totalDistance += Vector3.Distance(_path.corners[i - 1], _path.corners[i]);
 
-        for (int i = 1; i < nodePath.Count; i++)
+        Vector3 next = _path.corners[1];
+        for (int i = 1; i < _path.corners.Length - 1; i++)
         {
-            totalDistance += HorizontalDistance(
-                worldPositions[nodePath[i - 1]],
-                worldPositions[nodePath[i]]);
+            Vector3 flatDelta = _path.corners[i] - startHit.position;
+            flatDelta.y = 0f;
+            if (flatDelta.magnitude > 0.65f)
+            {
+                next = _path.corners[i];
+                break;
+            }
+
+            next = _path.corners[i + 1];
         }
-
-        totalDistance += HorizontalDistance(worldPositions[endNode], cameraAnchorPosition);
-
-        float startDistance = HorizontalDistance(headsetPosition, worldPositions[startNode]);
-        Vector3 nextWaypoint;
-
-        if (startDistance > SkipNearStartRadius)
-            nextWaypoint = worldPositions[startNode];
-        else if (nodePath.Count > 1)
-            nextWaypoint = worldPositions[nodePath[1]];
-        else
-            nextWaypoint = cameraAnchorPosition;
 
         route = new Route
         {
-            nextWaypoint = nextWaypoint,
+            nextWaypoint = next,
             totalDistance = totalDistance,
-            cornerCount = nodePath.Count + 2
+            cornerCount = _path.corners.Length
         };
 
-        State = NavigationState.Ready;
-        Status = "Waypoint navigation ready";
+        Status = "Wall-aware navigation ready";
         return true;
     }
 
-    public bool BeginCalibration()
+    private void OnDestroy()
     {
-        if (_positions == null)
-            _positions = FindFirstObjectByType<CameraSpatialAnchors>();
-
-        if (_positions == null ||
-            !TryGetReferenceFrame(out _, out _, out _))
-        {
-            State = NavigationState.LoadingScene;
-            Status = "Restore or register CAM_001 and CAM_002 before route setup.";
-            return false;
-        }
-
-        _calibrationGraph = new WaypointGraph();
-        _lastCalibrationNode = -1;
-        Status = "Route setup started. Add points at doors, turns, junctions, and near each camera.";
-        return true;
-    }
-
-    public bool RecordCalibrationPoint(Vector3 worldPosition)
-    {
-        if (_calibrationGraph == null)
-        {
-            Status = "Start route setup first.";
-            return false;
-        }
-
-        if (_positions == null ||
-            !TryGetReferenceFrame(out Vector3 origin, out Vector3 xAxis, out Vector3 zAxis))
-        {
-            Status = "CAM_001 / CAM_002 reference tracking was lost.";
-            return false;
-        }
-
-        Vector3 local = WorldToLocal(origin, xAxis, zAxis, worldPosition);
-        int currentNode = FindExistingCalibrationNode(local);
-
-        if (currentNode < 0)
-        {
-            currentNode = _calibrationGraph.nodes.Count;
-            _calibrationGraph.nodes.Add(
-                new WaypointNode
-                {
-                    id = currentNode,
-                    localPosition = local
-                });
-        }
-
-        if (_lastCalibrationNode >= 0 &&
-            _lastCalibrationNode != currentNode &&
-            !HasEdge(_calibrationGraph, _lastCalibrationNode, currentNode))
-        {
-            _calibrationGraph.edges.Add(
-                new WaypointEdge
-                {
-                    a = _lastCalibrationNode,
-                    b = currentNode
-                });
-        }
-
-        _lastCalibrationNode = currentNode;
-
-        Status =
-            "Waypoint " + (currentNode + 1) + " recorded · " +
-            _calibrationGraph.nodes.Count + " points · " +
-            _calibrationGraph.edges.Count + " connections";
-
-        return true;
-    }
-
-    public bool FinishCalibration()
-    {
-        if (_calibrationGraph == null)
-        {
-            Status = "No route setup is active.";
-            return false;
-        }
-
-        if (_calibrationGraph.nodes.Count < 2 ||
-            _calibrationGraph.edges.Count < 1)
-        {
-            Status = "Record at least two connected route points.";
-            return false;
-        }
-
-        if (_positions == null || string.IsNullOrWhiteSpace(_positions.Site))
-        {
-            Status = "No active location site.";
-            return false;
-        }
-
-        PlayerPrefs.SetString(
-            GraphKeyPrefix + _positions.Site,
-            JsonUtility.ToJson(_calibrationGraph));
-        PlayerPrefs.Save();
-
-        _graph = _calibrationGraph;
-        _calibrationGraph = null;
-        _lastCalibrationNode = -1;
-        _loadedSite = _positions.Site;
-
-        EnsureReady();
-
-        if (State == NavigationState.Ready)
-            Status = "Waypoint route saved for " + _positions.Site + ": " + _graph.nodes.Count + " points.";
-
-        return State == NavigationState.Ready;
-    }
-
-    public void CancelCalibration()
-    {
-        _calibrationGraph = null;
-        _lastCalibrationNode = -1;
-        EnsureReady();
-    }
-
-    public void ClearCalibration()
-    {
-        if (_positions == null || string.IsNullOrWhiteSpace(_positions.Site))
-            return;
-
-        PlayerPrefs.DeleteKey(GraphKeyPrefix + _positions.Site);
-        PlayerPrefs.Save();
-
-        _graph = new WaypointGraph();
-        _calibrationGraph = null;
-        _lastCalibrationNode = -1;
-        _loadedSite = _positions.Site;
-
-        State = NavigationState.SceneSetupRequired;
-        Status = "Waypoint route cleared for " + _positions.Site + ".";
-    }
-
-    private void RefreshGraphForCurrentSite()
-    {
-        if (_positions == null || string.IsNullOrWhiteSpace(_positions.Site))
-            return;
-
-        if (_loadedSite == _positions.Site && _graph != null)
-            return;
-
-        _loadedSite = _positions.Site;
-        string json = PlayerPrefs.GetString(GraphKeyPrefix + _positions.Site, "");
-
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            _graph = new WaypointGraph();
-            return;
-        }
-
-        try
-        {
-            _graph = JsonUtility.FromJson<WaypointGraph>(json) ?? new WaypointGraph();
-            if (_graph.nodes == null) _graph.nodes = new List<WaypointNode>();
-            if (_graph.edges == null) _graph.edges = new List<WaypointEdge>();
-        }
-        catch (Exception ex)
-        {
-            Debug.LogException(ex);
-            _graph = new WaypointGraph();
-            State = NavigationState.Failed;
-            Status = "Saved waypoint route could not be loaded.";
-        }
-    }
-
-    private int FindExistingCalibrationNode(Vector3 localPosition)
-    {
-        if (_calibrationGraph == null || _calibrationGraph.nodes == null)
-            return -1;
-
-        for (int i = 0; i < _calibrationGraph.nodes.Count; i++)
-        {
-            if (HorizontalDistance(
-                    _calibrationGraph.nodes[i].localPosition,
-                    localPosition) <= RevisitMergeRadius)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static bool HasEdge(WaypointGraph graph, int a, int b)
-    {
-        if (graph == null || graph.edges == null)
-            return false;
-
-        for (int i = 0; i < graph.edges.Count; i++)
-        {
-            WaypointEdge edge = graph.edges[i];
-            if ((edge.a == a && edge.b == b) ||
-                (edge.a == b && edge.b == a))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static int FindNearestNode(Vector3 worldPosition, Vector3[] nodes)
-    {
-        int best = -1;
-        float bestDistance = float.MaxValue;
-
-        for (int i = 0; i < nodes.Length; i++)
-        {
-            float distance = HorizontalDistance(worldPosition, nodes[i]);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                best = i;
-            }
-        }
-
-        return best;
-    }
-
-    private List<int> FindShortestPath(
-        int start,
-        int goal,
-        Vector3[] worldPositions)
-    {
-        int count = _graph.nodes.Count;
-        var distances = new float[count];
-        var previous = new int[count];
-        var visited = new bool[count];
-
-        for (int i = 0; i < count; i++)
-        {
-            distances[i] = float.PositiveInfinity;
-            previous[i] = -1;
-        }
-
-        distances[start] = 0f;
-
-        for (int step = 0; step < count; step++)
-        {
-            int current = -1;
-            float best = float.PositiveInfinity;
-
-            for (int i = 0; i < count; i++)
-            {
-                if (!visited[i] && distances[i] < best)
-                {
-                    best = distances[i];
-                    current = i;
-                }
-            }
-
-            if (current < 0 || current == goal)
-                break;
-
-            visited[current] = true;
-
-            for (int i = 0; i < _graph.edges.Count; i++)
-            {
-                WaypointEdge edge = _graph.edges[i];
-                int neighbor = -1;
-
-                if (edge.a == current) neighbor = edge.b;
-                else if (edge.b == current) neighbor = edge.a;
-
-                if (neighbor < 0 || neighbor >= count || visited[neighbor])
-                    continue;
-
-                float candidate =
-                    distances[current] +
-                    HorizontalDistance(
-                        worldPositions[current],
-                        worldPositions[neighbor]);
-
-                if (candidate < distances[neighbor])
-                {
-                    distances[neighbor] = candidate;
-                    previous[neighbor] = current;
-                }
-            }
-        }
-
-        if (float.IsPositiveInfinity(distances[goal]))
-            return null;
-
-        var reversed = new List<int>();
-        int cursor = goal;
-
-        while (cursor >= 0)
-        {
-            reversed.Add(cursor);
-            if (cursor == start) break;
-            cursor = previous[cursor];
-        }
-
-        if (reversed[reversed.Count - 1] != start)
-            return null;
-
-        reversed.Reverse();
-        return reversed;
-    }
-
-    private bool TryGetReferenceFrame(
-        out Vector3 origin,
-        out Vector3 xAxis,
-        out Vector3 zAxis)
-    {
-        origin = default;
-        xAxis = default;
-        zAxis = default;
-
-        if (_positions == null ||
-            !_positions.TryGetPosition(ReferenceCameraA, out Vector3 a) ||
-            !_positions.TryGetPosition(ReferenceCameraB, out Vector3 b))
-        {
-            return false;
-        }
-
-        Vector3 horizontal = b - a;
-        horizontal.y = 0f;
-
-        if (horizontal.sqrMagnitude < 0.25f)
-            return false;
-
-        origin = a;
-        xAxis = horizontal.normalized;
-        zAxis = Vector3.Cross(xAxis, Vector3.up).normalized;
-        return true;
-    }
-
-    private static Vector3 LocalToWorld(
-        Vector3 origin,
-        Vector3 xAxis,
-        Vector3 zAxis,
-        Vector3 local)
-    {
-        return origin +
-               xAxis * local.x +
-               Vector3.up * local.y +
-               zAxis * local.z;
-    }
-
-    private static Vector3 WorldToLocal(
-        Vector3 origin,
-        Vector3 xAxis,
-        Vector3 zAxis,
-        Vector3 world)
-    {
-        Vector3 offset = world - origin;
-        return new Vector3(
-            Vector3.Dot(offset, xAxis),
-            Vector3.Dot(offset, Vector3.up),
-            Vector3.Dot(offset, zAxis));
-    }
-
-    private static float HorizontalDistance(Vector3 a, Vector3 b)
-    {
-        float dx = a.x - b.x;
-        float dz = a.z - b.z;
-        return Mathf.Sqrt(dx * dx + dz * dz);
+        if (_sceneNavigation != null)
+            _sceneNavigation.OnNavMeshInitialized.RemoveListener(OnNavMeshInitialized);
     }
 }

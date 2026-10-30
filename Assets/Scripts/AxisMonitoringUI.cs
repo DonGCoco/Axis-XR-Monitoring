@@ -1443,6 +1443,7 @@ public partial class AxisMonitoringUI : MonoBehaviour
     public void ShowDetails(CameraData camera)
     {
         if (_savingPosition) return;
+        StopLiveView();
         EndSpatialWorkflow();
         if (camera == null)
             return;
@@ -1517,6 +1518,14 @@ public partial class AxisMonitoringUI : MonoBehaviour
             new Vector2(0f, -480f), () => BeginRegistration(camera), PanelSoftColor);
         CreateButton(_detailsRoot.transform, "Locations", new Vector2(180f, 54f),
             new Vector2(210f, -480f), () => ShowLocationSettings(camera), PanelSoftColor);
+
+        CreateButton(
+            _detailsRoot.transform,
+            "Live View",
+            new Vector2(165f, 58f),
+            new Vector2(0f, -575f),
+            () => ShowLiveView(camera),
+            PanelSoftColor);
 
         CreateButton(
             _detailsRoot.transform,
@@ -1836,6 +1845,7 @@ public partial class AxisMonitoringUI : MonoBehaviour
 
     private void DestroyTransientUi()
     {
+        StopLiveView();
         if (_onboardingRoot != null)
         {
             Destroy(_onboardingRoot);

@@ -21,6 +21,7 @@ public partial class AxisMonitoringUI
     private float _scanNoticeUntil;
     private float _routeRefreshAt;
     private bool _routeAvailable;
+    private bool _routeSetupActive;
     private CameraNavigationPath.Route _route;
     public int SpatialWorkflowVersion { get; private set; }
 
@@ -36,12 +37,16 @@ public partial class AxisMonitoringUI
 
         string site = PlayerPrefs.GetString("AXIS_ANCHOR_SITE", "Home");
         await _positions.SelectSiteAsync(site == "Lab" ? "Lab" : "Home");
+        _navigationPath.Initialize(_positions);
     }
 
     private void EndSpatialWorkflow()
     {
         if (_savingPosition) return;
         SpatialWorkflowVersion++;
+        if (_navigationPath != null && _navigationPath.IsCalibrating)
+            _navigationPath.CancelCalibration();
+        _routeSetupActive = false;
         _locateTarget = null;
         _registerTarget = null;
         _scanNotice = null;
@@ -173,6 +178,111 @@ public partial class AxisMonitoringUI
         if (this && saved) ShowDetails(camera);
     }
 
+    private void ShowRouteSetup(CameraData camera)
+    {
+        if (_savingPosition || _positions == null || _navigationPath == null)
+            return;
+
+        EndSpatialWorkflow();
+        _routeSetupActive = true;
+        BuildSpatialPanel("Route Setup | " + _positions.Site);
+
+        CreateButton(
+            _spatialRoot.transform,
+            "Start new",
+            new Vector2(170f, 52f),
+            new Vector2(-190f, -250f),
+            BeginRouteCalibration,
+            AccentColor);
+
+        CreateButton(
+            _spatialRoot.transform,
+            "Add point",
+            new Vector2(170f, 52f),
+            new Vector2(0f, -250f),
+            AddRouteCalibrationPoint,
+            PanelSoftColor);
+
+        CreateButton(
+            _spatialRoot.transform,
+            "Save route",
+            new Vector2(170f, 52f),
+            new Vector2(190f, -250f),
+            SaveRouteCalibration,
+            HealthyColor);
+
+        CreateButton(
+            _spatialRoot.transform,
+            "Back",
+            new Vector2(150f, 52f),
+            new Vector2(0f, -310f),
+            () => ExitRouteSetup(camera),
+            PanelSoftColor);
+
+        UpdateRouteSetupText();
+    }
+
+    private void BeginRouteCalibration()
+    {
+        if (_navigationPath == null)
+            return;
+
+        _navigationPath.BeginCalibration();
+        UpdateRouteSetupText();
+    }
+
+    private void AddRouteCalibrationPoint()
+    {
+        if (_navigationPath == null || _camera == null)
+            return;
+
+        _navigationPath.RecordCalibrationPoint(_camera.transform.position);
+        UpdateRouteSetupText();
+    }
+
+    private void SaveRouteCalibration()
+    {
+        if (_navigationPath == null)
+            return;
+
+        _navigationPath.FinishCalibration();
+        UpdateRouteSetupText();
+    }
+
+    private void UpdateRouteSetupText()
+    {
+        if (!_routeSetupActive || _spatialText == null || _navigationPath == null)
+            return;
+
+        bool referenceReady =
+            _positions != null &&
+            _positions.TryGetPosition("CAM_001", out _);
+
+        string reference =
+            referenceReady
+                ? "CAM_001 reference ready"
+                : "CAM_001 reference unavailable";
+
+        string action =
+            _navigationPath.IsCalibrating
+                ? "Walk the safe route and press Add point at doors, turns, junctions, and near each camera."
+                : "Press Start new to record a route. CAM_001 must already be registered.";
+
+        _spatialText.text =
+            $"{_positions.Site} | {reference}\n" +
+            $"{_navigationPath.Status}\n" +
+            action;
+    }
+
+    private void ExitRouteSetup(CameraData camera)
+    {
+        if (_navigationPath != null && _navigationPath.IsCalibrating)
+            _navigationPath.CancelCalibration();
+
+        _routeSetupActive = false;
+        ShowDetails(camera);
+    }
+
     private void ShowLocationSettings(CameraData camera, bool confirmClear = false)
     {
         if (_savingPosition || _positions == null) return;
@@ -191,11 +301,18 @@ public partial class AxisMonitoringUI
             CreateButton(_spatialRoot.transform, "Retry restore", new Vector2(170f, 52f), new Vector2(0f, -250f), RestoreLocations, PanelSoftColor);
             CreateButton(_spatialRoot.transform, "Clear site", new Vector2(170f, 52f), new Vector2(200f, -250f),
                 () => { if (!_positions.Busy) ShowLocationSettings(camera, true); }, PanelSoftColor);
+            CreateButton(_spatialRoot.transform, "Route setup", new Vector2(170f, 52f), new Vector2(-180f, -310f),
+                () => ShowRouteSetup(camera), AccentColor);
         }
         CreateButton(_spatialRoot.transform, "Back", new Vector2(150f, 52f), new Vector2(180f, -310f),
             () => ShowDetails(camera), PanelSoftColor);
     }
-    private async void SwitchLocationSite() { if (!_positions.Busy) await _positions.SelectSiteAsync(_positions.Site == "Home" ? "Lab" : "Home"); }
+    private async void SwitchLocationSite()
+    {
+        if (_positions.Busy) return;
+        await _positions.SelectSiteAsync(_positions.Site == "Home" ? "Lab" : "Home");
+        _navigationPath?.Initialize(_positions);
+    }
     private async void RestoreLocations() { if (!_positions.Busy) await _positions.ReloadAsync(); }
     private async void ClearCurrentSite()
     {
@@ -215,7 +332,11 @@ public partial class AxisMonitoringUI
         }
         if (!_spatialRoot || _positions == null) return;
         if (_positionMarker && _camera) _positionMarker.transform.rotation = _camera.transform.rotation;
-        if (_registerTarget != null)
+        if (_routeSetupActive)
+        {
+            UpdateRouteSetupText();
+        }
+        else if (_registerTarget != null)
         {
             _spatialText.text = _savingPosition
                 ? _positions.Status
@@ -240,7 +361,7 @@ public partial class AxisMonitoringUI
                 {
                     if (_positionMarker) _positionMarker.SetActive(false);
                     _directionText.text = "Navigation unavailable";
-                    _spatialText.text = "MRUK SceneNavigation service is unavailable.";
+                    _spatialText.text = "Waypoint navigation service is unavailable.";
                 }
                 else
                 {
@@ -259,9 +380,11 @@ public partial class AxisMonitoringUI
                     {
                         if (_positionMarker) _positionMarker.SetActive(false);
                         _directionText.text =
-                            _navigationPath.State == CameraNavigationPath.NavigationState.Ready
-                                ? "No mapped route"
-                                : "Preparing route";
+                            _navigationPath.State == CameraNavigationPath.NavigationState.SceneSetupRequired
+                                ? "Route setup needed"
+                                : _navigationPath.State == CameraNavigationPath.NavigationState.Ready
+                                    ? "No waypoint route"
+                                    : "Preparing route";
                         _spatialText.text =
                             $"{_locateTarget.cameraId} | {_positions.Site}\n" +
                             _navigationPath.Status;
@@ -272,7 +395,7 @@ public partial class AxisMonitoringUI
                         Vector3 guidePoint =
                             nearTarget
                                 ? target
-                                : _route.nextWaypoint + Vector3.up * 1.15f;
+                                : _route.nextWaypoint;
 
                         if (_positionMarker)
                         {
@@ -302,10 +425,10 @@ public partial class AxisMonitoringUI
 
                         _spatialText.text =
                             $"{_locateTarget.cameraId} | {_positions.Site}\n" +
-                            "MRUK SceneNavigation route\n" +
+                            "Preset waypoint route\n" +
                             (nearTarget
                                 ? "Near target. Scan its QR to confirm identity."
-                                : "Follow the NEXT marker; the route avoids mapped walls.");
+                                : "Follow the NEXT marker along the predefined walkable route.");
                     }
                 }
             }

@@ -67,6 +67,11 @@ public class AxisMonitoringUI : MonoBehaviour
     private GameObject _messageRoot;
 
     private Text _overviewButtonText;
+    private Text _roomStatusText;
+    private GameObject _roomStatusCanvas;
+    private Text _roomScanButtonText;
+    private Text _targetButtonText;
+    private QrRoutePlanner _routePlanner;
     private readonly List<CardVisual> _cards = new List<CardVisual>();
 
     private class CardVisual
@@ -137,7 +142,7 @@ public class AxisMonitoringUI : MonoBehaviour
         GameObject overviewButton = CreateButtonCanvas(
             "OverviewButton",
             _hudRoot.transform,
-            new Vector3(-0.06f, -0.22f, 0.82f),
+            new Vector3(-0.34f, -0.22f, 0.82f),
             new Vector2(220f, 64f),
             "Overview",
             () =>
@@ -154,12 +159,126 @@ public class AxisMonitoringUI : MonoBehaviour
         CreateButtonCanvas(
             "HelpButton",
             _hudRoot.transform,
-            new Vector3(0.14f, -0.22f, 0.82f),
+            new Vector3(-0.16f, -0.22f, 0.82f),
             new Vector2(110f, 64f),
             "Help",
             () => ShowOnboarding(0));
 
+        GameObject roomScanButton = CreateButtonCanvas(
+            "RoomScanButton",
+            _hudRoot.transform,
+            new Vector3(0.07f, -0.22f, 0.82f),
+            new Vector2(220f, 64f),
+            "Scan room",
+            OnRoomScanClicked);
+        _roomScanButtonText = roomScanButton.GetComponentInChildren<Text>();
+
+        GameObject targetButton = CreateButtonCanvas(
+            "SpatialTargetButton",
+            _hudRoot.transform,
+            new Vector3(0.32f, -0.22f, 0.82f),
+            new Vector2(220f, 64f),
+            "Choose target",
+            OnTargetButtonClicked);
+        _targetButtonText = targetButton.GetComponentInChildren<Text>();
+
+        _roomStatusCanvas = CreateCanvas(
+            "RoomStatusCanvas",
+            new Vector2(1000f, 88f),
+            _hudRoot.transform,
+            new Vector3(-0.01f, -0.32f, 0.82f),
+            Color.clear);
+        _roomStatusText = AddText(
+            _roomStatusCanvas.transform,
+            "先扫描房间地图，再选择目标点",
+            18,
+            FontStyle.Bold,
+            TextSecondary,
+            new Vector2(24f, -10f),
+            new Vector2(-24f, -78f),
+            TextAnchor.MiddleCenter);
+        StartCoroutine(WatchRoomStatus());
+
         _hudRoot.SetActive(false);
+    }
+
+    private void OnRoomScanClicked()
+    {
+        if (_routePlanner != null && _routePlanner.IsSelectingTarget)
+        {
+            SetRoomStatus("正在选择目标；请先取消目标选择，再重新扫描房间");
+            return;
+        }
+
+        SetRoomStatus("按钮已触发，正在启动房间扫描…");
+        if (_roomScanButtonText != null) _roomScanButtonText.text = "Scanning…";
+
+        RoomNavMeshBootstrap room = FindFirstObjectByType<RoomNavMeshBootstrap>();
+        if (room == null)
+        {
+            SetRoomStatus("找不到房间扫描组件，请重启应用");
+            if (_roomScanButtonText != null) _roomScanButtonText.text = "Scan room";
+            Debug.LogError("Room scan button received a click, but RoomNavMeshBootstrap is missing.");
+            return;
+        }
+
+        room.RequestRoomScan();
+    }
+
+    private void OnTargetButtonClicked()
+    {
+        if (_routePlanner == null)
+            _routePlanner = FindFirstObjectByType<QrRoutePlanner>();
+
+        if (_routePlanner == null)
+        {
+            SetRoomStatus("找不到导航组件，请重启应用");
+            return;
+        }
+
+        if (_routePlanner.IsSelectingTarget)
+        {
+            _routePlanner.CancelSpatialTargetSelection();
+            if (_targetButtonText != null) _targetButtonText.text = "Choose target";
+            return;
+        }
+
+        if (_routePlanner.BeginSpatialTargetSelection() && _targetButtonText != null)
+            _targetButtonText.text = "Cancel target";
+    }
+
+    private void SetRoomStatus(string message)
+    {
+        if (_roomStatusText != null) _roomStatusText.text = message;
+        Debug.Log("Room scan UI: " + message);
+    }
+
+    private IEnumerator WatchRoomStatus()
+    {
+        RoomNavMeshBootstrap room = null;
+        while (room == null)
+        {
+            room = FindFirstObjectByType<RoomNavMeshBootstrap>();
+            yield return null;
+        }
+        room.RoomStatusChanged += text =>
+        {
+            SetRoomStatus(text);
+            if (!text.Contains("正在") && _roomScanButtonText != null)
+                _roomScanButtonText.text = text.Contains("就绪") || text.Contains("冷却结束") || text.Contains("可以重新扫描")
+                    ? "Scan again"
+                    : "Retry scan";
+        };
+
+        _routePlanner = FindFirstObjectByType<QrRoutePlanner>();
+        if (_routePlanner != null)
+        {
+            _routePlanner.RouteStatusChanged += SetRoomStatus;
+            if (_targetButtonText != null && _routePlanner.IsSelectingTarget)
+                _targetButtonText.text = "Cancel target";
+        }
+        if (room.IsNavMeshReady && _roomStatusText != null)
+            _roomStatusText.text = "房间地图已就绪 · 绿区可走 · 红框为障碍";
     }
 
     private void ShowIdle()
@@ -516,11 +635,13 @@ public class AxisMonitoringUI : MonoBehaviour
             {
                 HideMessage();
                 BuildOverview(cameras);
+                if (_apiClient.LastRequestUsedFallback)
+                    StartCoroutine(ShowOfflineCameraNotice());
             },
             error =>
             {
                 Debug.LogError($"OVERVIEW LOAD FAILED | {error}");
-                ShowOverviewError();
+                ShowOverviewError(error);
             });
     }
 
@@ -1050,7 +1171,7 @@ public class AxisMonitoringUI : MonoBehaviour
             AddClickable(
                 row,
                 background,
-                () => ShowDetails(camera),
+                () => StartCoroutine(OpenCameraDetailsNextFrame(camera)),
                 background.color,
                 new Color(0.12f, 0.20f, 0.28f, 0.96f));
 
@@ -1306,7 +1427,7 @@ public class AxisMonitoringUI : MonoBehaviour
             AddClickable(
                 label,
                 background,
-                () => ShowDetails(camera),
+                () => StartCoroutine(OpenCameraDetailsNextFrame(camera)),
                 normalColor,
                 new Color(
                     0.10f,
@@ -1320,6 +1441,15 @@ public class AxisMonitoringUI : MonoBehaviour
             group = group,
             clickable = clickable
         };
+    }
+
+    private IEnumerator OpenCameraDetailsNextFrame(CameraData camera)
+    {
+        // Defer destroying the selected RayInteractable until Meta's state-change
+        // event has completed. Destroying its parent synchronously can cancel the
+        // selection and leave the Overview card looking unresponsive.
+        yield return null;
+        ShowDetails(camera);
     }
 
     private void SelectCamera(CameraData camera)
@@ -1692,13 +1822,13 @@ public class AxisMonitoringUI : MonoBehaviour
             _overviewButtonText.text = "Overview";
     }
 
-    private void ShowOverviewError()
+    private void ShowOverviewError(string error = null)
     {
         HideMessage();
 
         _messageRoot = CreateHeadLockedPanel(
             "OverviewError",
-            new Vector2(520f, 250f),
+            new Vector2(600f, 300f),
             new Vector3(0f, 0f, 0.88f));
 
         AddText(
@@ -1712,18 +1842,20 @@ public class AxisMonitoringUI : MonoBehaviour
 
         AddText(
             _messageRoot.transform,
-            "Check the Quest Wi-Fi connection and try again.",
-            21,
+            string.IsNullOrWhiteSpace(error)
+                ? "Camera service returned no camera list. Check the service and try again."
+                : error.Length > 100 ? error.Substring(0, 100) + "…" : error,
+            17,
             FontStyle.Normal,
             TextSecondary,
-            new Vector2(26f, -92f),
-            new Vector2(-26f, -145f));
+            new Vector2(26f, -88f),
+            new Vector2(-26f, -190f));
 
         CreateButton(
             _messageRoot.transform,
             "Retry",
             new Vector2(160f, 58f),
-            new Vector2(135f, -182f),
+            new Vector2(135f, -238f),
             OpenOverview,
             AccentColor);
 
@@ -1731,7 +1863,7 @@ public class AxisMonitoringUI : MonoBehaviour
             _messageRoot.transform,
             "Close",
             new Vector2(120f, 58f),
-            new Vector2(-165f, -182f),
+            new Vector2(-165f, -238f),
             ShowIdle,
             PanelSoftColor);
     }
@@ -1774,6 +1906,13 @@ public class AxisMonitoringUI : MonoBehaviour
             new Vector2(0f, -192f),
             ShowIdle,
             PanelSoftColor);
+    }
+
+    private IEnumerator ShowOfflineCameraNotice()
+    {
+        ShowMessage("Offline mode\nShowing demo cameras");
+        yield return new WaitForSecondsRealtime(3f);
+        HideMessage();
     }
 
     private void ShowMessage(string text)

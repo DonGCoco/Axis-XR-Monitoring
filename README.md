@@ -73,3 +73,9 @@ The Meta XR packages are intentionally not committed yet. Install them in Unity 
 ## Important
 
 The current warning thresholds and telemetry are mock development data only. They are not official Axis thresholds. Live telemetry and health rules will be updated after the real Axis camera model and VAPIX capabilities are known.
+
+## Quest navigation setup
+
+For room-scale obstacle-avoiding navigation to wall-mounted `CAM_*` QR targets on Quest 3, see:
+
+- `docs/QUEST_NAVIGATION_SETUP.md`

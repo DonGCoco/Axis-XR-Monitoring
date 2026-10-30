@@ -130,6 +130,8 @@ GameObject:
   - component: {fileID: 71468983}
   - component: {fileID: 71468982}
   - component: {fileID: 71468981}
+  - component: {fileID: 71468984}
+  - component: {fileID: 71468985}
   m_Layer: 0
   m_Name: CameraServices
   m_TagString: Untagged
@@ -182,6 +184,51 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &71468984
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 71468980}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a214546a65f44f4fbcf3fe7f83df048a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoomNavMeshBootstrap
+  maxWaitForRoomSeconds: 12
+  minRoomColliderCount: 8
+  navMeshLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  rebuildOnTrackableChanges: 1
+  rebuildDebounceSeconds: 1.25
+--- !u!114 &71468985
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 71468980}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b9388700586447c788f383d8de8d9fd8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::QrRoutePlanner
+  navMeshBootstrap: {fileID: 71468984}
+  routeRenderer: {fileID: 0}
+  headsetTransform: {fileID: 0}
+  standOffDistance: 0.9
+  minWallClearance: 0.1
+  targetSampleRadius: 0.8
+  extraDirectionalSamples: 8
+  directionSampleStepDegrees: 30
+  floorProbeHeight: 1.6
+  floorProbeDistance: 3.5
+  updateIntervalSeconds: 0.35
+  updateMoveThreshold: 0.2
+  headsetSampleRadius: 2.25
+  arrivalDistance: 0.6
 --- !u!1 &128794812
 GameObject:
   m_ObjectHideFlags: 0

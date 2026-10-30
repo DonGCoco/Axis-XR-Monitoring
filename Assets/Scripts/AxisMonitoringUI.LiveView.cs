@@ -117,7 +117,7 @@ public partial class AxisMonitoringUI
 
         while (version == _liveViewVersion && _liveViewRoot != null)
         {
-            using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(url))
+            using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(url, true))
             {
                 request.timeout = 10;
                 request.SetRequestHeader("Cache-Control", "no-cache");

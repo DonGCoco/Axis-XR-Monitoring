@@ -219,7 +219,7 @@ MonoBehaviour:
   routeRenderer: {fileID: 0}
   headsetTransform: {fileID: 0}
   standOffDistance: 0.9
-  minWallClearance: 0.28
+  minWallClearance: 0.1
   targetSampleRadius: 0.8
   extraDirectionalSamples: 8
   directionSampleStepDegrees: 30
@@ -227,7 +227,7 @@ MonoBehaviour:
   floorProbeDistance: 3.5
   updateIntervalSeconds: 0.35
   updateMoveThreshold: 0.2
-  headsetSampleRadius: 0.7
+  headsetSampleRadius: 2.25
   arrivalDistance: 0.6
 --- !u!1 &128794812
 GameObject:

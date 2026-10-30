@@ -254,22 +254,28 @@ public partial class AxisMonitoringUI
         if (!_routeSetupActive || _spatialText == null || _navigationPath == null)
             return;
 
-        bool referenceReady =
+        bool cam001Ready =
             _positions != null &&
             _positions.TryGetPosition("CAM_001", out _);
 
-        string reference =
-            referenceReady
-                ? "CAM_001 reference ready"
-                : "CAM_001 reference unavailable";
+        bool cam002Ready =
+            _positions != null &&
+            _positions.TryGetPosition("CAM_002", out _);
+
+        string references =
+            $"CAM_001: {(cam001Ready ? "ready" : "unavailable")}  |  " +
+            $"CAM_002: {(cam002Ready ? "ready" : "unavailable")}";
 
         string action =
             _navigationPath.IsCalibrating
                 ? "Walk the safe route and press Add point at doors, turns, junctions, and near each camera."
-                : "Press Start new to record a route. CAM_001 must already be registered.";
+                : cam001Ready && cam002Ready
+                    ? "Both camera anchors are ready. Press Start new to record a route."
+                    : "Register / restore both CAM_001 and CAM_002 before starting route setup.";
 
         _spatialText.text =
-            $"{_positions.Site} | {reference}\n" +
+            $"{_positions.Site}\n" +
+            references + "\n" +
             $"{_navigationPath.Status}\n" +
             action;
     }

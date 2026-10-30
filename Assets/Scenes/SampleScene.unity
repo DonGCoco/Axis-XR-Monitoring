@@ -166,7 +166,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraApiClient
   useEmbeddedMockData: 0
-  baseUrl: https://axis-xr-monitoring.onrender.com
+  baseUrl: http://192.168.137.1:5000
 --- !u!4 &71468983
 Transform:
   m_ObjectHideFlags: 0

@@ -69,7 +69,7 @@ def request_snapshot(camera_id):
         jpeg = response.read(MAX_SNAPSHOT_BYTES + 1)
         if len(jpeg) > MAX_SNAPSHOT_BYTES:
             raise ValueError("Snapshot exceeds 4 MiB size limit")
-        if not jpeg.startswith(b"\\xff\\xd8"):
+        if not jpeg.startswith(b"\xff\xd8"):
             raise ValueError("Camera did not return a JPEG image")
         return jpeg
 

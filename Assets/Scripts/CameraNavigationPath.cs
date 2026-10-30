@@ -214,11 +214,36 @@ public sealed class CameraNavigationPath : MonoBehaviour
     private void OnNavMeshInitialized()
     {
         _building = false;
+        int roomCount = GetMappedRoomCount();
+        int triangleCount = GetNavMeshTriangleCount();
+
+        // SceneNavigation can fire its completion callback even when the
+        // resulting scene supplies no usable walkable polygons.
+        if (triangleCount == 0)
+        {
+            State = NavigationState.SceneSetupRequired;
+            Status = "No walkable NavMesh polygons (0 triangles, " +
+                     roomCount + " mapped rooms). Check the FLOOR in Quest Space Setup.";
+            Debug.LogWarning("AXIS NAVMESH EMPTY | " + Status);
+            return;
+        }
+
         State = NavigationState.Ready;
-        int rooms = MRUK.Instance != null && MRUK.Instance.Rooms != null
+        Status = "NavMesh ready | rooms: " + roomCount +
+                 " | triangles: " + triangleCount;
+    }
+
+    private static int GetMappedRoomCount()
+    {
+        return MRUK.Instance != null && MRUK.Instance.Rooms != null
             ? MRUK.Instance.Rooms.Count
             : 0;
-        Status = "NavMesh ready | mapped rooms: " + rooms;
+    }
+
+    private static int GetNavMeshTriangleCount()
+    {
+        NavMeshTriangulation triangulation = NavMesh.CalculateTriangulation();
+        return triangulation.indices == null ? 0 : triangulation.indices.Length / 3;
     }
 
     public bool TryGetRoute(Vector3 headsetPosition, Vector3 cameraAnchorPosition, out Route route)
@@ -234,7 +259,30 @@ public sealed class CameraNavigationPath : MonoBehaviour
                 3.0f,
                 NavMesh.AllAreas))
         {
-            Status = "Move onto a mapped walkable area.";
+            int triangles = GetNavMeshTriangleCount();
+            int rooms = GetMappedRoomCount();
+            if (triangles == 0)
+            {
+                Status = "No walkable NavMesh generated (0 triangles, " +
+                         rooms + " mapped rooms). Check the FLOOR in Quest Space Setup.";
+            }
+            else if (NavMesh.SamplePosition(
+                         headsetPosition, out NavMeshHit distantHit,
+                         10f, NavMesh.AllAreas))
+            {
+                // Diagnostic only: never navigate using this distant projection,
+                // which could cross a real wall or jump between floors.
+                float distance = Vector3.Distance(headsetPosition, distantHit.position);
+                Status = "NavMesh exists (" + triangles + " triangles, " +
+                         rooms + " rooms), but nearest walkable point is " +
+                         distance.ToString("0.0") + " m away. Check map alignment.";
+            }
+            else
+            {
+                Status = "NavMesh exists (" + triangles + " triangles, " +
+                         rooms + " rooms), but no walkable surface within 10 m.";
+            }
+            Debug.LogWarning("AXIS NAVMESH START UNAVAILABLE | " + Status);
             return false;
         }
 

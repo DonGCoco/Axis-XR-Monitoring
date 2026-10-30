@@ -22,6 +22,22 @@ public sealed class CameraSpatialAnchors : MonoBehaviour
         position = anchor.transform.position;
         return true;
     }
+    public bool TryGetPose(string id, out Pose pose)
+    {
+        pose = default;
+        if (Busy ||
+            !anchors.TryGetValue(id, out var anchor) ||
+            !anchor ||
+            !anchor.Localized ||
+            !anchor.IsTracked)
+        {
+            return false;
+        }
+
+        pose = new Pose(anchor.transform.position, anchor.transform.rotation);
+        return true;
+    }
+
     public async Task SelectSiteAsync(string site)
     {
         if (Busy) return;

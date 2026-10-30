@@ -41,6 +41,22 @@ If both show CAM_001 and CAM_002, the network path is ready.
 
 ## Expected application flow
 
-Overview -> real camera status -> Details -> Locate -> waypoint guidance -> QR confirmation.
+Overview -> real camera status -> Details -> Locate -> MRUK mapped navigation -> QR confirmation.
+
+Details -> Live View -> on-demand JPEG preview (about one snapshot per second).
 
 Do not use Windows ICS scripts, Hosted Network commands, Bluetooth PAN, or the old D-Link adapter on this laptop.
+
+## JPEG snapshot preview
+
+The same running proxy now supports:
+
+- `http://127.0.0.1:5000/camera/CAM_001/snapshot`
+- `http://127.0.0.1:5000/camera/CAM_002/snapshot`
+
+Test one of these in the Windows browser first. A successful response displays an actual JPEG image rather than JSON.
+The Quest uses `http://192.168.137.1:5000/camera/CAM_001/snapshot` (or CAM_002).
+The proxy authenticates to the Axis devices; **never embed Axis passwords in Unity or commit them**.
+Only the local lab hotspot should have access to this unauthenticated demo proxy. Do not expose port 5000 to public networks; shut down the proxy after testing.
+
+After updating this repository, restart the Windows proxy process. Updating Git alone does not reload the running Python server.

@@ -5,8 +5,9 @@ using UnityEngine;
 /// <summary>
 /// Lightweight waypoint navigation for the Axis XR prototype.
 /// It replaces MRUK room scanning/NavMesh with a small graph calibrated once
-/// in the lab. Waypoints are stored relative to CAM_001's persistent anchor,
-/// so the route survives app restarts without requiring a full room scan.
+/// in the lab. Waypoints are stored in a stable horizontal room frame defined
+/// by the persistent positions of CAM_001 and CAM_002. QR/anchor rotation is
+/// deliberately ignored so orientation drift cannot rotate the whole route.
 /// </summary>
 public sealed class CameraNavigationPath : MonoBehaviour
 {
@@ -48,8 +49,9 @@ public sealed class CameraNavigationPath : MonoBehaviour
         public List<WaypointEdge> edges = new List<WaypointEdge>();
     }
 
-    private const string ReferenceCameraId = "CAM_001";
-    private const string GraphKeyPrefix = "AXIS_WAYPOINT_GRAPH_V1_";
+    private const string ReferenceCameraA = "CAM_001";
+    private const string ReferenceCameraB = "CAM_002";
+    private const string GraphKeyPrefix = "AXIS_WAYPOINT_GRAPH_V2_";
     private const float RevisitMergeRadius = 0.55f;
     private const float SkipNearStartRadius = 0.65f;
 
@@ -106,10 +108,10 @@ public sealed class CameraNavigationPath : MonoBehaviour
             return;
         }
 
-        if (!_positions.TryGetPose(ReferenceCameraId, out _))
+        if (!TryGetReferenceFrame(out _, out _, out _))
         {
             State = NavigationState.LoadingScene;
-            Status = "Restoring " + ReferenceCameraId + " reference position. Look around the room.";
+            Status = "Restore/register CAM_001 and CAM_002 before using the route.";
             return;
         }
 
@@ -128,10 +130,10 @@ public sealed class CameraNavigationPath : MonoBehaviour
         if (State != NavigationState.Ready)
             return false;
 
-        if (!_positions.TryGetPose(ReferenceCameraId, out Pose referencePose))
+        if (!TryGetReferenceFrame(out Vector3 origin, out Vector3 xAxis, out Vector3 zAxis))
         {
             State = NavigationState.LoadingScene;
-            Status = "Reference camera position is not currently tracked.";
+            Status = "CAM_001 / CAM_002 reference positions are not currently tracked.";
             return false;
         }
 
@@ -139,7 +141,7 @@ public sealed class CameraNavigationPath : MonoBehaviour
         var worldPositions = new Vector3[count];
 
         for (int i = 0; i < count; i++)
-            worldPositions[i] = LocalToWorld(referencePose, _graph.nodes[i].localPosition);
+            worldPositions[i] = LocalToWorld(origin, xAxis, zAxis, _graph.nodes[i].localPosition);
 
         int startNode = FindNearestNode(headsetPosition, worldPositions);
         int endNode = FindNearestNode(cameraAnchorPosition, worldPositions);
@@ -196,10 +198,10 @@ public sealed class CameraNavigationPath : MonoBehaviour
             _positions = FindFirstObjectByType<CameraSpatialAnchors>();
 
         if (_positions == null ||
-            !_positions.TryGetPose(ReferenceCameraId, out _))
+            !TryGetReferenceFrame(out _, out _, out _))
         {
             State = NavigationState.LoadingScene;
-            Status = "Restore or register " + ReferenceCameraId + " before route setup.";
+            Status = "Restore or register CAM_001 and CAM_002 before route setup.";
             return false;
         }
 
@@ -218,13 +220,13 @@ public sealed class CameraNavigationPath : MonoBehaviour
         }
 
         if (_positions == null ||
-            !_positions.TryGetPose(ReferenceCameraId, out Pose referencePose))
+            !TryGetReferenceFrame(out Vector3 origin, out Vector3 xAxis, out Vector3 zAxis))
         {
-            Status = "CAM_001 reference tracking was lost.";
+            Status = "CAM_001 / CAM_002 reference tracking was lost.";
             return false;
         }
 
-        Vector3 local = WorldToLocal(referencePose, worldPosition);
+        Vector3 local = WorldToLocal(origin, xAxis, zAxis, worldPosition);
         int currentNode = FindExistingCalibrationNode(local);
 
         if (currentNode < 0)
@@ -489,15 +491,57 @@ public sealed class CameraNavigationPath : MonoBehaviour
         return reversed;
     }
 
-    private static Vector3 LocalToWorld(Pose reference, Vector3 local)
+    private bool TryGetReferenceFrame(
+        out Vector3 origin,
+        out Vector3 xAxis,
+        out Vector3 zAxis)
     {
-        return reference.position + reference.rotation * local;
+        origin = default;
+        xAxis = default;
+        zAxis = default;
+
+        if (_positions == null ||
+            !_positions.TryGetPosition(ReferenceCameraA, out Vector3 a) ||
+            !_positions.TryGetPosition(ReferenceCameraB, out Vector3 b))
+        {
+            return false;
+        }
+
+        Vector3 horizontal = b - a;
+        horizontal.y = 0f;
+
+        if (horizontal.sqrMagnitude < 0.25f)
+            return false;
+
+        origin = a;
+        xAxis = horizontal.normalized;
+        zAxis = Vector3.Cross(xAxis, Vector3.up).normalized;
+        return true;
     }
 
-    private static Vector3 WorldToLocal(Pose reference, Vector3 world)
+    private static Vector3 LocalToWorld(
+        Vector3 origin,
+        Vector3 xAxis,
+        Vector3 zAxis,
+        Vector3 local)
     {
-        return Quaternion.Inverse(reference.rotation) *
-               (world - reference.position);
+        return origin +
+               xAxis * local.x +
+               Vector3.up * local.y +
+               zAxis * local.z;
+    }
+
+    private static Vector3 WorldToLocal(
+        Vector3 origin,
+        Vector3 xAxis,
+        Vector3 zAxis,
+        Vector3 world)
+    {
+        Vector3 offset = world - origin;
+        return new Vector3(
+            Vector3.Dot(offset, xAxis),
+            Vector3.Dot(offset, Vector3.up),
+            Vector3.Dot(offset, zAxis));
     }
 
     private static float HorizontalDistance(Vector3 a, Vector3 b)

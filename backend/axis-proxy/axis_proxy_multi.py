@@ -52,6 +52,28 @@ def request_text(camera_id, path, method="GET", body=None, content_type=None, ti
         return response.read().decode("utf-8", errors="replace")
 
 
+# Snapshot frames stay behind the Windows proxy; Quest never receives camera credentials.
+# Resolution is deliberately limited to keep decoding inexpensive on the headset.
+MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
+
+
+def request_snapshot(camera_id):
+    cfg = CAMERAS[camera_id]
+    username, password = _credentials[camera_id]
+    url = cfg["base_url"].rstrip("/") + "/axis-cgi/jpg/image.cgi?resolution=640x360"
+    opener = auth_opener(cfg["base_url"], username, password)
+    request = urllib.request.Request(
+        url, headers={"Accept": "image/jpeg", "Cache-Control": "no-cache"}
+    )
+    with opener.open(request, timeout=10) as response:
+        jpeg = response.read(MAX_SNAPSHOT_BYTES + 1)
+        if len(jpeg) > MAX_SNAPSHOT_BYTES:
+            raise ValueError("Snapshot exceeds 4 MiB size limit")
+        if not jpeg.startswith(b"\\xff\\xd8"):
+            raise ValueError("Camera did not return a JPEG image")
+        return jpeg
+
+
 def json_post(camera_id, path, payload):
     return request_text(
         camera_id,
@@ -266,6 +288,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_snapshot(self, camera_id):
+        try:
+            jpeg = request_snapshot(camera_id)
+        except Exception as exc:
+            print(f"[SNAPSHOT] {camera_id}: {type(exc).__name__}: {exc}")
+            self.send_json({"error": "snapshot unavailable", "cameraId": camera_id}, 502)
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(jpeg)))
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(jpeg)
+
     def do_GET(self):
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path == "/health":
@@ -273,6 +311,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/cameras":
             self.send_json([read_camera(camera_id) for camera_id in CAMERAS])
+            return
+        snapshot_match = re.fullmatch(r"/camera/(CAM_001|CAM_002)/snapshot", path, re.I)
+        if snapshot_match:
+            self.send_snapshot(snapshot_match.group(1).upper())
             return
         match = re.fullmatch(r"/camera/([^/]+)", path, re.I)
         if match:
@@ -308,6 +350,7 @@ def main():
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     print(f"API Proxy running on http://{host}:{args.port}")
     print("Endpoints: /health, /cameras, /camera/CAM_001, /camera/CAM_002")
+    print("Snapshots: /camera/CAM_001/snapshot, /camera/CAM_002/snapshot")
     ThreadingHTTPServer((host, args.port), Handler).serve_forever()
 
 

@@ -157,6 +157,7 @@ This branch was checked as far as the development machine allowed. Nothing below
 | Check | Result |
 | --- | --- |
 | Unity compile | Pass. 0 errors, 0 warnings. Built with Unity `6000.3.12f1`; the project targets `6000.3.24f1`. |
+| EditMode tests | Pass. 5/5, including the QR identity checks. |
 | Android/Quest build | Pass. IL2CPP, ARM64, `targetSdk 34`, 81.8 MB APK, 0 errors. |
 | Arrow material, orientation, turn direction | Rendered offscreen against a generated NavMesh: arrows appear as blue fills with white edges, lie flat, and turn with the route. |
 | Control bar and diagnostics layout | Rendered at Quest 3 resolution and field of view: the bar sits lower-left, and both panels, the two buttons and `Reload map` fit without clipping. |

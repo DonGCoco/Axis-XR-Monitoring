@@ -7,6 +7,9 @@ public partial class AxisMonitoringUI
 {
     private CameraSpatialAnchors _positions;
     private CameraNavigationPath _navigationPath;
+    private FloorNavigationArrows _floorArrows;
+    private GameObject _locateDiagnostics;
+    private Text _locateSummary;
     private GameObject _spatialRoot;
     private GameObject _positionMarker;
     private Text _positionMarkerLabel;
@@ -42,6 +45,10 @@ public partial class AxisMonitoringUI
     {
         if (_savingPosition) return;
         SpatialWorkflowVersion++;
+        if (_floorArrows) _floorArrows.Hide();
+        if (_locateDiagnostics) Destroy(_locateDiagnostics);
+        _locateDiagnostics = null;
+        _locateSummary = null;
         _locateTarget = null;
         _registerTarget = null;
         _scanNotice = null;
@@ -86,19 +93,47 @@ public partial class AxisMonitoringUI
         _routeRefreshAt = 0f;
         _navigationPath?.EnsureReady();
         SetSpatialBoundaryless(true);
-        BuildSpatialPanel("Locate " + camera.cameraId);
-        _directionText = AddText(_spatialRoot.transform, "", 30, FontStyle.Bold, AccentColor,
-            new Vector2(24f, -245f), new Vector2(-24f, -290f), TextAnchor.MiddleCenter);
-        _positionMarker = CreatePositionMarker();
-        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(150f, 52f), new Vector2(-165f, -310f),
-            () => ShowDetails(camera), PanelSoftColor);
-        CreateButton(_spatialRoot.transform, "Reload map", new Vector2(170f, 52f), new Vector2(165f, -310f),
-            () =>
+        BuildLocateControls(camera);
+    }
+
+    private void BuildLocateControls(CameraData camera)
+    {
+        DestroyTransientUi();
+        if (_hudRoot) _hudRoot.SetActive(false);
+        if (!_floorArrows) _floorArrows = gameObject.AddComponent<FloorNavigationArrows>();
+        _floorArrows.Hide();
+        // Compact lower-left controls: central passthrough stays clear.
+        _spatialRoot = CreateHeadLockedPanel("LocateControls", new Vector2(400f, 140f),
+            new Vector3(-0.36f, -0.36f, 1.0f));
+        _directionText = AddText(_spatialRoot.transform, "Preparing route", 18,
+            FontStyle.Bold, AccentColor, new Vector2(14f,-8f), new Vector2(-14f,-43f));
+        _locateSummary = AddText(_spatialRoot.transform, camera.cameraId, 15,
+            FontStyle.Normal, TextSecondary, new Vector2(14f,-45f), new Vector2(-14f,-78f));
+        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(145f,44f),
+            new Vector2(-92f,-88f), () => ShowDetails(camera), PanelSoftColor);
+        CreateButton(_spatialRoot.transform, "Info", new Vector2(145f,44f),
+            new Vector2(92f,-88f), () => ToggleLocateDiagnostics(), PanelSoftColor);
+        _locateDiagnostics = CreateCanvas("LocateDiagnostics", new Vector2(400f, 260f),
+            _spatialRoot.transform, Vector3.zero, PanelColor);
+        // CreateCanvas scales UI from mm to metres; nested canvas inherits parent scale.
+        _locateDiagnostics.transform.localScale = Vector3.one;
+        _locateDiagnostics.transform.localPosition = new Vector3(0f,210f,0f);
+        _spatialText = AddText(_locateDiagnostics.transform, "", 17, FontStyle.Normal,
+            TextSecondary, new Vector2(14f,-12f), new Vector2(-14f,-184f));
+        CreateButton(_locateDiagnostics.transform, "Reload map", new Vector2(170f,44f),
+            new Vector2(0f,-202f), () =>
             {
                 _routeAvailable = false;
                 _routeRefreshAt = 0f;
+                if (_floorArrows) _floorArrows.Hide();
                 _navigationPath?.ReloadScene();
             }, AccentColor);
+        _locateDiagnostics.SetActive(false);
+    }
+
+    private void ToggleLocateDiagnostics()
+    {
+        if (_locateDiagnostics) _locateDiagnostics.SetActive(!_locateDiagnostics.activeSelf);
     }
 
     // Called before API lookup. Wrong QR leaves guidance active and never opens its details.
@@ -235,6 +270,8 @@ public partial class AxisMonitoringUI
 
             if (!found)
             {
+                if (_floorArrows) _floorArrows.Hide();
+                _routeAvailable = false;
                 if (_positionMarker) _positionMarker.SetActive(false);
                 _directionText.text = "Position unavailable";
                 _spatialText.text = _positions.Busy ? _positions.Status :
@@ -245,6 +282,8 @@ public partial class AxisMonitoringUI
             {
                 if (_navigationPath == null)
                 {
+                    if (_floorArrows) _floorArrows.Hide();
+                    _routeAvailable = false;
                     if (_positionMarker) _positionMarker.SetActive(false);
                     _directionText.text = "Navigation unavailable";
                     _spatialText.text = "MRUK SceneNavigation service is unavailable.";
@@ -264,6 +303,7 @@ public partial class AxisMonitoringUI
 
                     if (!_routeAvailable)
                     {
+                        if (_floorArrows) _floorArrows.Hide();
                         if (_positionMarker) _positionMarker.SetActive(false);
                         _directionText.text =
                             _navigationPath.State == CameraNavigationPath.NavigationState.SceneSetupRequired
@@ -280,49 +320,28 @@ public partial class AxisMonitoringUI
                     else
                     {
                         bool nearTarget = _route.totalDistance < 0.8f;
-                        Vector3 guidePoint =
-                            nearTarget
-                                ? target
-                                : _route.nextWaypoint + Vector3.up * 1.15f;
-
-                        if (_positionMarker)
-                        {
-                            _positionMarker.SetActive(true);
-                            _positionMarker.transform.position = guidePoint;
-                        }
-
-                        if (_positionMarkerLabel)
-                            _positionMarkerLabel.text =
-                                nearTarget ? _locateTarget.cameraId : "NEXT";
-
-                        Vector3 relative =
-                            _camera.transform.InverseTransformDirection(
-                                guidePoint - _camera.transform.position);
-                        relative.y = 0f;
-
-                        float angle =
-                            Mathf.Atan2(relative.x, relative.z) * Mathf.Rad2Deg;
-
-                        string direction =
-                            Mathf.Abs(angle) < 15 ? "↑ Ahead" :
-                            Mathf.Abs(angle) > 150 ? "↓ Behind you" :
-                            angle > 0 ? "→ Turn right" : "← Turn left";
-
-                        _directionText.text =
-                            $"{direction}  |  {_route.totalDistance:0.0} m";
+                        if (_floorArrows) _floorArrows.ShowRoute(_route.corners, nearTarget);
+                        _directionText.text = nearTarget
+                            ? "Near target · scan its QR"
+                            : $"{_locateTarget.cameraId} · {_route.totalDistance:0.0} m";
 
                         _spatialText.text =
                             $"{_locateTarget.cameraId} | {_positions.Site}\n" +
                             "MRUK SceneNavigation route\n" +
                             (nearTarget
                                 ? "Near target. Scan its QR to confirm identity."
-                                : "Follow the NEXT marker; the route avoids mapped walls.");
+                                : "Follow the floor arrows. Route uses the saved room map; check your surroundings.");
                     }
                 }
             }
         }
         else _spatialText.text = $"Active site: {_positions.Site}\n{_positions.Status}\nSwitch to Lab and register again at school.";
         if (_scanNotice != null && Time.unscaledTime < _scanNoticeUntil) _spatialText.text += "\n" + _scanNotice;
+        if (_locateTarget != null && _locateSummary)
+        {
+            _locateSummary.text = _scanNotice != null && Time.unscaledTime < _scanNoticeUntil
+                ? _scanNotice : _routeAvailable ? "Follow floor arrows · Info for map options" : "Guidance paused · open Info";
+        }
     }
     private void SetSpatialBoundaryless(bool suppressed)
     {
@@ -337,5 +356,6 @@ public partial class AxisMonitoringUI
         SetSpatialBoundaryless(false);
         if (_spatialRoot) Destroy(_spatialRoot);
         if (_positionMarker) Destroy(_positionMarker);
+        if (_floorArrows) Destroy(_floorArrows);
     }
 }

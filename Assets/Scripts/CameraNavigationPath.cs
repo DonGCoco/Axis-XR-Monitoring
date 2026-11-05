@@ -24,6 +24,7 @@ public sealed class CameraNavigationPath : MonoBehaviour
     public struct Route
     {
         public Vector3 nextWaypoint;
+        public Vector3[] corners;
         public float totalDistance;
         public int cornerCount;
     }
@@ -332,6 +333,7 @@ public sealed class CameraNavigationPath : MonoBehaviour
         route = new Route
         {
             nextWaypoint = next,
+            corners = (Vector3[])_path.corners.Clone(),
             totalDistance = totalDistance,
             cornerCount = _path.corners.Length
         };

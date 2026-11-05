@@ -38,10 +38,27 @@ The current integration uses MRUK QR trackables. During registration, the tracke
 - Maintain separate Home and Lab location registries.
 - Restore, re-register or clear locations through the location settings.
 - Build a walkable navigation map from Quest room data using MRUK SceneNavigation and Unity NavMesh.
-- Show the next route point, direction and remaining route distance.
+- Guide the walk with floor arrows placed along the complete mapped route.
+- Show the target and remaining distance in a compact lower-left control bar.
 - Confirm the target camera through QR identification. A mismatched QR does not replace the active navigation target.
 
 Navigation requires a usable room map and a localized, tracked camera anchor. Map loading, route availability and recovery have explicit UI states. Laboratory recordings show the navigation workflow in use; reliable operation across other layouts and repeated sessions still requires testing.
+
+### Floor guidance
+
+Locate draws the route on the floor instead of a floating next-point marker.
+
+- `0.5 m × 0.3 m` blue arrows with a white edge, spaced `0.8 m`, covering roughly the next `5 m` of the route.
+- Arrows follow every NavMesh corner, so turns match the mapped route rather than a straight line to the camera.
+- Each arrow is checked against the NavMesh at its centre and around its outline. An arrow that would leave the walkable surface is not drawn, and no straight-line fallback is generated.
+- A ground ring marks the destination once the remaining route is short.
+- The lower-left control bar shows the target and remaining distance, with `Cancel` and a collapsed `Info` panel containing diagnostics and `Reload map`.
+- Guidance hides when localization, the room map or a complete route is unavailable. Cancelling, switching target or deleting saved positions clears the arrows.
+- Arrows refresh when the route is recalculated, not every frame, and are reused from a small object pool.
+
+Arrow geometry uses the project's retained UI material. The navigation UI adds no textures, prefabs, shaders or scene objects, and it leaves the Boundary, anchor and QR identity code untouched.
+
+The saved room map is not live obstacle avoidance. Arrows describe the route through mapped geometry, so unmapped furniture, people and moved objects are not avoided.
 
 ### Interaction
 
@@ -133,6 +150,20 @@ Build for Android/Quest. Allow the requested spatial permissions, prepare the Qu
 
 See [spatial registration and recovery](docs/SPATIAL_LOCATIONS.md) and [QR setup](docs/QUEST_QR_SETUP.md) for further setup context. Some documents describe earlier implementation stages; the current navigation service is `CameraNavigationPath.cs` in the integrated branch.
 
+### Floor guidance verification
+
+This branch was checked as far as the development machine allowed. Nothing below was validated on a headset.
+
+| Check | Result |
+| --- | --- |
+| Unity compile | Pass. 0 errors, 0 warnings. Built with Unity `6000.3.12f1`; the project targets `6000.3.24f1`. |
+| Android/Quest build | Pass. IL2CPP, ARM64, `targetSdk 34`, 81.8 MB APK, 0 errors. |
+| Arrow material, orientation, turn direction | Rendered offscreen against a generated NavMesh: arrows appear as blue fills with white edges, lie flat, and turn with the route. |
+| Control bar and diagnostics layout | Rendered at Quest 3 resolution and field of view: the bar sits lower-left, and both panels, the two buttons and `Reload map` fit without clipping. |
+| On-device walk, hand-ray interaction, multi-room and floor-height behaviour | Not run. No headset was attached, so `adb` reported no devices. |
+
+Still unverified on hardware: arrow visibility against real floor textures in passthrough, comfort of the head-locked lower-left bar while walking, text legibility of the `15`–`18` pt labels at `1 m`, depth sorting between the white edge and the blue fill at grazing angles, and whether the NavMesh surface matches the physical floor closely enough for the arrows to sit on it rather than float.
+
 ## Repository structure
 
 ```text
@@ -147,6 +178,7 @@ Assets/
     CameraData.cs                  # Device data and availability fields
     CameraSpatialAnchors.cs        # Persistent physical-location bindings
     CameraNavigationPath.cs        # MRUK/NavMesh route service
+    FloorNavigationArrows.cs       # Ground arrow and destination-ring guidance
     QrCameraScanner.cs             # QR identification and registration input
 backend/
   axis-proxy/                      # Real two-camera Windows proxy and launchers

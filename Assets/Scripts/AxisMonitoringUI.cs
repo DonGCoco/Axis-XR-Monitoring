@@ -1156,6 +1156,9 @@ public partial class AxisMonitoringUI : MonoBehaviour
         string status =
             NormalizeStatus(camera.status);
 
+        if (camera.healthIssuesAvailable && camera.issues != null && camera.issues.Length > 0)
+            return camera.issues[0].message;
+
         if (status == "OFFLINE")
             return "No connection";
 
@@ -1575,6 +1578,11 @@ public partial class AxisMonitoringUI : MonoBehaviour
 
     private void BuildWarningDetails(CameraData camera)
     {
+        if (camera.healthIssuesAvailable)
+        {
+            BuildRealHealthDetails(camera);
+            return;
+        }
         AddSectionLabel("ISSUE", -128f);
 
         string issueTitle = "Attention required";

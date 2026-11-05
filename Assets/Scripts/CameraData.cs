@@ -17,6 +17,12 @@ public class CameraData
     public string status;
     public string serverTime;
 
+    public bool healthIssuesAvailable;
+    public CameraHealthIssue[] issues;
+    public string temperatureEventStatus;
+    public bool temperatureAlarmAvailable;
+    public bool temperatureAlarmActive;
+
     // Real Axis/VAPIX telemetry.
     public bool vapixTelemetry;
     public string serialNumber;
@@ -59,4 +65,13 @@ public class CameraDataList
 public class CameraError
 {
     public string error;
+}
+
+[Serializable]
+public class CameraHealthIssue
+{
+    public string type;
+    public string message;
+    public string source;
+    public string evidence;
 }

@@ -4,6 +4,8 @@ import json
 import re
 import ssl
 import urllib.request
+import threading
+from axis_health import NativeTemperature, finalize
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -21,6 +23,7 @@ CAMERAS = {
 }
 
 _credentials = {}
+_native_temperature = NativeTemperature()
 _ssl_context = ssl._create_unverified_context()
 
 
@@ -180,6 +183,8 @@ def offline_camera(camera_id, error):
         "maxPower": 0.0,
         "powerRequested": 0.0,
         "poeClass": -1,
+        "issues": [],
+        "healthIssuesAvailable": True,
         "error": error,
     }
 
@@ -196,6 +201,8 @@ def read_camera(camera_id):
             {"apiVersion": "1.3", "method": "getAllProperties"},
         ))
         props = basic.get("data", {}).get("propertyList", {})
+        if not props:
+            raise ValueError("Device information unavailable")
         camera["online"] = True
         camera["model"] = first_nonempty(
             props.get("ProdFullName"), props.get("ProdShortName"),
@@ -207,7 +214,7 @@ def read_camera(camera_id):
         camera["osVersion"] = props.get("Version", "")
         camera["serialNumber"] = props.get("SerialNumber", "")
     except Exception as exc:
-        return offline_camera(camera_id, f"{type(exc).__name__}: {exc}")
+        return finalize(offline_camera(camera_id, "Device information request failed"))
 
     try:
         parse_temp(
@@ -224,8 +231,9 @@ def read_camera(camera_id):
             {"apiVersion": "1.4", "method": "systemready", "params": {"timeout": 0}},
         ))
         data = system.get("data", {})
-        camera["systemReadyAvailable"] = True
-        camera["systemReady"] = str(data.get("systemready", "")).lower() == "yes"
+        ready = str(data.get("systemready", "")).lower()
+        camera["systemReadyAvailable"] = ready in ("yes", "no")
+        camera["systemReady"] = ready == "yes"
         camera["uptime"] = int(data.get("uptime", -1))
     except Exception:
         pass
@@ -258,16 +266,9 @@ def read_camera(camera_id):
     except Exception:
         pass
 
-    camera["status"] = (
-        "WARNING"
-        if camera["storageAvailable"]
-        and camera["emmcHealthAvailable"]
-        and not camera["storageHealthy"]
-        else "HEALTHY"
-    )
     camera["serverTime"] = now_iso()
     camera.pop("error", None)
-    return camera
+    return finalize(camera, _native_temperature)
 
 
 def prompt_credentials():
@@ -339,7 +340,15 @@ def main():
 
     prompt_credentials()
 
+    stop = threading.Event()
+    for camera_id, cfg in CAMERAS.items():
+        threading.Thread(target=_native_temperature.run,
+                         args=(camera_id, cfg["base_url"], request_text, stop),
+                         daemon=True).start()
+
     if args.check:
+        # Allow discovery and initial state notifications before the one-shot read.
+        stop.wait(3)
         print(json.dumps(
             [read_camera(camera_id) for camera_id in CAMERAS],
             indent=2,
@@ -351,7 +360,14 @@ def main():
     print(f"API Proxy running on http://{host}:{args.port}")
     print("Endpoints: /health, /cameras, /camera/CAM_001, /camera/CAM_002")
     print("Snapshots: /camera/CAM_001/snapshot, /camera/CAM_002/snapshot")
-    ThreadingHTTPServer((host, args.port), Handler).serve_forever()
+    server = ThreadingHTTPServer((host, args.port), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop.set()
+        server.server_close()
 
 
 if __name__ == "__main__":

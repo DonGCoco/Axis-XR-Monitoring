@@ -1,0 +1,7 @@
+{
+  "name": "Axis.Spatial.EditorTests",
+  "references": [],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}

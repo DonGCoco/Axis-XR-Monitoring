@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class AxisMonitoringUI : MonoBehaviour
+public partial class AxisMonitoringUI : MonoBehaviour
 {
     private const string OnboardingKey = "AXIS_XR_ONBOARDING_SEEN_V6";
 
@@ -114,6 +114,7 @@ public class AxisMonitoringUI : MonoBehaviour
         // Meta Interaction SDK comprehensive rig already present in the scene.
         // Do not create a parallel custom ray system here.
         BuildHud();
+        InitializeSpatialWorkflow();
 
         if (PlayerPrefs.GetInt(OnboardingKey, 0) == 0)
             ShowOnboarding(0);
@@ -164,6 +165,8 @@ public class AxisMonitoringUI : MonoBehaviour
 
     private void ShowIdle()
     {
+        if (_savingPosition) return;
+        EndSpatialWorkflow();
         DestroyTransientUi();
         if (_hudRoot != null)
             _hudRoot.SetActive(true);
@@ -174,6 +177,8 @@ public class AxisMonitoringUI : MonoBehaviour
 
     public void ShowOnboarding(int step)
     {
+        if (_savingPosition) return;
+        EndSpatialWorkflow();
         _onboardingStep = Mathf.Clamp(step, 0, 2);
         DestroyTransientUi();
 
@@ -498,6 +503,8 @@ public class AxisMonitoringUI : MonoBehaviour
 
     public void OpenOverview()
     {
+        if (_savingPosition) return;
+        EndSpatialWorkflow();
         if (_apiClient == null)
         {
             ShowFriendlyError("Camera data service is not available.");
@@ -1149,6 +1156,9 @@ public class AxisMonitoringUI : MonoBehaviour
         string status =
             NormalizeStatus(camera.status);
 
+        if (camera.healthIssuesAvailable && camera.issues != null && camera.issues.Length > 0)
+            return camera.issues[0].message;
+
         if (status == "OFFLINE")
             return "No connection";
 
@@ -1419,6 +1429,8 @@ public class AxisMonitoringUI : MonoBehaviour
 
     private IEnumerator ShowScanConfirmation(CameraData camera)
     {
+        EndSpatialWorkflow();
+        int confirmationVersion = SpatialWorkflowVersion;
         DestroyTransientUi();
 
         if (_hudRoot != null)
@@ -1426,12 +1438,16 @@ public class AxisMonitoringUI : MonoBehaviour
 
         ShowMessage($"✓ Camera identified\n{camera.cameraId}");
         yield return new WaitForSeconds(0.75f);
+        if (confirmationVersion != SpatialWorkflowVersion) yield break;
         HideMessage();
         ShowDetails(camera);
     }
 
     public void ShowDetails(CameraData camera)
     {
+        if (_savingPosition) return;
+        StopLiveView();
+        EndSpatialWorkflow();
         if (camera == null)
             return;
 
@@ -1456,7 +1472,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
         _detailsRoot = CreateHeadLockedPanel(
             "CameraDetails",
-            new Vector2(680f, 500f),
+            new Vector2(680f, 640f),
             new Vector3(0f, 0f, 0.92f));
 
         string status = NormalizeStatus(camera.status);
@@ -1495,11 +1511,30 @@ public class AxisMonitoringUI : MonoBehaviour
         else
             BuildHealthyDetails(camera);
 
+        _detailsCameraId = camera.cameraId;
+        _locationStatus = AddText(_detailsRoot.transform, "Loading position…", 17, FontStyle.Normal,
+            TextSecondary, new Vector2(30f, -438f), new Vector2(-30f, -466f));
+
+        CreateButton(_detailsRoot.transform, "Locate", new Vector2(180f, 54f),
+            new Vector2(-210f, -480f), () => BeginLocate(camera), AccentColor);
+        CreateButton(_detailsRoot.transform, "Register by QR", new Vector2(200f, 54f),
+            new Vector2(0f, -480f), () => BeginRegistration(camera), PanelSoftColor);
+        CreateButton(_detailsRoot.transform, "Locations", new Vector2(180f, 54f),
+            new Vector2(210f, -480f), () => ShowLocationSettings(camera), PanelSoftColor);
+
+        CreateButton(
+            _detailsRoot.transform,
+            "Live View",
+            new Vector2(165f, 58f),
+            new Vector2(0f, -575f),
+            () => ShowLiveView(camera),
+            PanelSoftColor);
+
         CreateButton(
             _detailsRoot.transform,
             "Overview",
             new Vector2(170f, 58f),
-            new Vector2(210f, -430f),
+            new Vector2(210f, -575f),
             OpenOverview,
             AccentColor);
 
@@ -1507,13 +1542,19 @@ public class AxisMonitoringUI : MonoBehaviour
             _detailsRoot.transform,
             "Close",
             new Vector2(120f, 58f),
-            new Vector2(-240f, -430f),
+            new Vector2(-240f, -575f),
             ShowIdle,
             PanelSoftColor);
     }
 
     private void BuildHealthyDetails(CameraData camera)
     {
+        if (camera.vapixTelemetry)
+        {
+            BuildVapixHealthyDetails(camera);
+            return;
+        }
+
         AddSectionLabel("HEALTH", -128f);
 
         string temperature =
@@ -1537,6 +1578,11 @@ public class AxisMonitoringUI : MonoBehaviour
 
     private void BuildWarningDetails(CameraData camera)
     {
+        if (camera.healthIssuesAvailable)
+        {
+            BuildRealHealthDetails(camera);
+            return;
+        }
         AddSectionLabel("ISSUE", -128f);
 
         string issueTitle = "Attention required";
@@ -1807,6 +1853,7 @@ public class AxisMonitoringUI : MonoBehaviour
 
     private void DestroyTransientUi()
     {
+        StopLiveView();
         if (_onboardingRoot != null)
         {
             Destroy(_onboardingRoot);

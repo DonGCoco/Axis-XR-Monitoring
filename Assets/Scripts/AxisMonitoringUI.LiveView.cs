@@ -105,13 +105,9 @@ public partial class AxisMonitoringUI
 
     private IEnumerator RefreshLiveSnapshots(string cameraId, int version)
     {
-        if (cameraId != "CAM_001" && cameraId != "CAM_002")
-        {
-            if (_liveViewStatus != null)
-                _liveViewStatus.text = "No snapshot endpoint configured for " + cameraId;
-            yield break;
-        }
-
+        // The proxy owns the camera list, so the client no longer keeps a
+        // hardcoded allow-list. A camera without a snapshot route reports the
+        // HTTP failure through the status line instead of being blocked here.
         string url = _apiClient.BaseUrl.TrimEnd('/') +
                      "/camera/" + cameraId + "/snapshot";
 

@@ -105,15 +105,15 @@ public partial class AxisMonitoringUI
 
     private IEnumerator RefreshLiveSnapshots(string cameraId, int version)
     {
-        if (cameraId != "CAM_001" && cameraId != "CAM_002")
+        if (string.IsNullOrWhiteSpace(cameraId))
         {
             if (_liveViewStatus != null)
-                _liveViewStatus.text = "No snapshot endpoint configured for " + cameraId;
+                _liveViewStatus.text = "Camera ID is missing.";
             yield break;
         }
 
         string url = _apiClient.BaseUrl.TrimEnd('/') +
-                     "/camera/" + cameraId + "/snapshot";
+                     "/camera/" + UnityWebRequest.EscapeURL(cameraId) + "/snapshot";
 
         while (version == _liveViewVersion && _liveViewRoot != null)
         {

@@ -26,6 +26,9 @@ public sealed class CameraNavigationPath : MonoBehaviour
         public Vector3 nextWaypoint;
         public float totalDistance;
         public int cornerCount;
+        // Full NavMesh corridor, used to draw a dashed guide that follows the
+        // walkable path instead of pointing straight through walls.
+        public Vector3[] corners;
     }
 
     private SceneNavigation _sceneNavigation;
@@ -333,7 +336,8 @@ public sealed class CameraNavigationPath : MonoBehaviour
         {
             nextWaypoint = next,
             totalDistance = totalDistance,
-            cornerCount = _path.corners.Length
+            cornerCount = _path.corners.Length,
+            corners = (Vector3[])_path.corners.Clone()
         };
 
         Status = "Wall-aware navigation ready";

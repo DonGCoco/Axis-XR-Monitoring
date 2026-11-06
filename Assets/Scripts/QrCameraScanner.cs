@@ -21,6 +21,21 @@ public class QrCameraScanner : MonoBehaviour
     private CameraStatusPanel _activePanel;
     private AxisMonitoringUI _monitoringUI;
 
+    // The Register panel shows this so a silent scan failure is visible on the
+    // headset instead of looking like "nothing happened".
+    public static QrCameraScanner Instance { get; private set; }
+    public string ScannerStatus { get; private set; } = "QR scanner: starting";
+    public int TrackedQrCount => _trackedQrs.Count;
+
+    private readonly List<MRUKTrackable> _seedTrackables =
+        new List<MRUKTrackable>();
+    private float _nextTrackablePoll;
+    private int _lastPolledTotal = -1;
+    private readonly List<OVRAnchor> _markerAnchors = new List<OVRAnchor>();
+    private bool _markerFetchBusy;
+    private float _nextMarkerFetch;
+    private int _lastMarkerCount = -1;
+
     private readonly List<QrTrackState> _trackedQrs =
         new List<QrTrackState>();
 
@@ -36,6 +51,8 @@ public class QrCameraScanner : MonoBehaviour
 
     private void Awake()
     {
+        Instance = this;
+
         if (apiClient == null)
             apiClient = FindFirstObjectByType<CameraApiClient>();
 
@@ -50,6 +67,8 @@ public class QrCameraScanner : MonoBehaviour
 
     private IEnumerator WaitForMRUKAndSubscribe()
     {
+        ScannerStatus = "QR scanner: waiting for MRUK";
+
         while (MRUK.Instance == null)
             yield return null;
 
@@ -57,6 +76,7 @@ public class QrCameraScanner : MonoBehaviour
 
         if (_mruk.SceneSettings == null)
         {
+            ScannerStatus = "QR scanner: MRUK settings missing";
             Debug.LogError("QrCameraScanner: MRUK.SceneSettings is null.");
             yield break;
         }
@@ -65,7 +85,26 @@ public class QrCameraScanner : MonoBehaviour
         _mruk.SceneSettings.TrackableRemoved.AddListener(OnTrackableRemoved);
         _subscribed = true;
 
-        Debug.Log("QrCameraScanner ready. Waiting for CAM_* QR codes...");
+        // MRUK only raises TrackableAdded for codes that appear after the
+        // listener is attached. A QR that is already in view when the app
+        // starts would therefore never reach the registration flow, so pull
+        // the existing trackables once and feed them through the same path.
+        int seeded = 0;
+        _mruk.GetTrackables(_seedTrackables);
+
+        foreach (MRUKTrackable trackable in _seedTrackables)
+        {
+            if (trackable == null)
+                continue;
+
+            seeded++;
+            OnTrackableAdded(trackable);
+        }
+
+        _seedTrackables.Clear();
+
+        ScannerStatus = "QR scanner: listening (seeded " + seeded + ")";
+        Debug.Log("QrCameraScanner ready. Waiting for CAM_* QR codes... seeded=" + seeded);
     }
 
     private void OnDisable()
@@ -85,6 +124,11 @@ public class QrCameraScanner : MonoBehaviour
     private void Update()
     {
         float now = Time.unscaledTime;
+
+        PollTrackables(now);
+
+        if (_monitoringUI != null && _monitoringUI.IsRegistering)
+            FetchAnchoredMarkers(now);
 
         for (int i = _trackedQrs.Count - 1; i >= 0; i--)
         {
@@ -161,12 +205,141 @@ public class QrCameraScanner : MonoBehaviour
         }
     }
 
+    // MRUK does not reliably raise TrackableAdded for markers the system is
+    // already tracking, for example a QR that was in view before the listener
+    // attached. Polling the trackable list keeps registration working.
+    private void PollTrackables(float now)
+    {
+        if (!_subscribed || _mruk == null)
+            return;
+
+        if (now < _nextTrackablePoll)
+            return;
+
+        _nextTrackablePoll = now + 0.5f;
+
+        _mruk.GetTrackables(_seedTrackables);
+
+        int total = _seedTrackables.Count;
+
+        if (total != _lastPolledTotal)
+        {
+            _lastPolledTotal = total;
+            Debug.Log($"QR POLL total={total}");
+        }
+
+        int added = 0;
+
+        foreach (MRUKTrackable trackable in _seedTrackables)
+        {
+            if (trackable == null)
+                continue;
+
+            if (_trackedQrs.Exists(state => state.trackable == trackable))
+                continue;
+
+            added++;
+            OnTrackableAdded(trackable);
+        }
+
+        _seedTrackables.Clear();
+
+        if (added > 0)
+            Debug.Log($"QR POLL: {added} new trackable(s)");
+    }
+
+    // Markers that the system has already anchored are never reported through
+    // MRUK's TrackableAdded callback, which is why registration could not see a
+    // QR that was registered in an earlier session. Query the anchored markers
+    // directly and reuse them as registration poses.
+    private void FetchAnchoredMarkers(float now)
+    {
+        if (_markerFetchBusy || now < _nextMarkerFetch)
+            return;
+
+        _nextMarkerFetch = now + 1.5f;
+        FetchAnchoredMarkersAsync();
+    }
+
+    private async void FetchAnchoredMarkersAsync()
+    {
+        _markerFetchBusy = true;
+
+        try
+        {
+            var options = new OVRAnchor.FetchOptions
+            {
+                SingleComponentType = typeof(OVRMarkerPayload)
+            };
+
+            var result = await OVRAnchor.FetchAnchorsAsync(_markerAnchors, options);
+
+            if (!result.Success)
+            {
+                ScannerStatus = "Marker query failed: " + result.Status;
+                return;
+            }
+
+            if (_markerAnchors.Count != _lastMarkerCount)
+            {
+                _lastMarkerCount = _markerAnchors.Count;
+                Debug.Log($"ANCHOR MARKERS: {_lastMarkerCount}");
+            }
+
+            foreach (OVRAnchor anchor in _markerAnchors)
+            {
+                if (!anchor.TryGetComponent<OVRMarkerPayload>(out OVRMarkerPayload marker))
+                    continue;
+
+                string payload = marker.AsString();
+
+                if (string.IsNullOrWhiteSpace(payload))
+                    continue;
+
+                payload = payload.Trim();
+
+                if (!payload.StartsWith("CAM_"))
+                    continue;
+
+                if (!anchor.TryGetComponent<OVRLocatable>(out OVRLocatable locatable))
+                    continue;
+
+                if (!locatable.TryGetSceneAnchorPose(out OVRLocatable.TrackingSpacePose spacePose))
+                    continue;
+
+                if (!spacePose.IsPositionTracked)
+                    continue;
+
+                Vector3 position = spacePose.Position ?? Vector3.zero;
+                Quaternion rotation = spacePose.Rotation ?? Quaternion.identity;
+
+                Debug.Log($"ANCHOR MARKER MATCH: {payload}");
+
+                if (_monitoringUI != null &&
+                    _monitoringUI.TryRegisterCameraFromQr(payload, new Pose(position, rotation)))
+                {
+                    ScannerStatus = "Anchor marker used: " + payload;
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogException(ex);
+        }
+        finally
+        {
+            _markerFetchBusy = false;
+        }
+    }
+
     private void OnTrackableAdded(MRUKTrackable trackable)
     {
         if (!TryGetCameraPayload(trackable, out string payload))
             return;
 
         Debug.Log($"Axis camera QR detected: {payload}");
+        ScannerStatus = "QR detected: " + payload;
 
         QrTrackState existing =
             _trackedQrs.Find(state => state.trackable == trackable);

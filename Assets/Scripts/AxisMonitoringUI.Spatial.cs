@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -30,6 +31,9 @@ public partial class AxisMonitoringUI
     private GameObject _locateDrawerRoot;
     private GameObject _locateNoticeRoot;
     private GameObject _routeArrow;
+    private readonly List<GameObject> _routeDashes = new List<GameObject>();
+    private const int RouteDashCount = 18;
+    private const float RouteDashSpacing = 0.3f;
     private GameObject _locateTargetTag;
     private Text _locateArrowGlyph;
     private Text _locateDistance;
@@ -49,6 +53,10 @@ public partial class AxisMonitoringUI
     private bool _routeAvailable;
     private CameraNavigationPath.Route _route;
     public int SpatialWorkflowVersion { get; private set; }
+
+    // The scanner uses this to decide whether an already-anchored marker should
+    // be consumed as a registration pose.
+    public bool IsRegistering => _registerTarget != null;
 
     private async void InitializeSpatialWorkflow()
     {
@@ -311,6 +319,21 @@ public partial class AxisMonitoringUI
         CreateArrowBar(arrowCanvas.transform, new Vector2(16f, 40f), new Vector2(13f, 20f), -45f);
         _routeArrow.SetActive(false);
 
+        // Dashed path. Each dash gets its own tiny world-space canvas so it can
+        // be rotated independently while following the NavMesh corridor.
+        for (int i = 0; i < RouteDashCount; i++)
+        {
+            GameObject dash = CreateCanvas(
+                "RouteDash" + i,
+                new Vector2(34f, 88f),
+                null,
+                Vector3.zero,
+                LocateArrowColor);
+
+            dash.SetActive(false);
+            _routeDashes.Add(dash);
+        }
+
         // Near-target tag replaces the arrow once the user is close enough
         // that a floor arrow would sit under their feet.
         _locateTargetTag = CreateCanvas(
@@ -384,8 +407,31 @@ public partial class AxisMonitoringUI
             "Scan the QR attached beside " + camera.cameraId + ".\n" +
             "Its tracked QR pose will become the saved physical camera position.\n" +
             "No controller placement is required.";
-        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(160f, 52f), new Vector2(0f, -310f),
+        CreateButton(_spatialRoot.transform, "Place ahead 4 m", new Vector2(240f, 52f), new Vector2(-135f, -310f),
+            () => SavePosition(camera, TestPlacementPose(4f)), AccentColor);
+        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(150f, 52f), new Vector2(170f, -310f),
             () => ShowDetails(camera), PanelSoftColor);
+    }
+
+    // Test-only placement so the navigation UI can be validated on a rig where
+    // MRUK does not surface QR trackables. The saved pose is a real Meta
+    // spatial anchor, only its position is synthesised.
+    private Pose TestPlacementPose(float meters)
+    {
+        Transform head = _camera.transform;
+
+        Vector3 forward = head.forward;
+        forward.y = 0f;
+
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+
+        forward.Normalize();
+
+        Vector3 position = head.position + forward * meters;
+        position.y = head.position.y - 1.2f;
+
+        return new Pose(position, Quaternion.LookRotation(forward, Vector3.up));
     }
 
     // QrCameraScanner calls this with the Meta MRUK trackable pose.
@@ -480,7 +526,9 @@ public partial class AxisMonitoringUI
                 _spatialText.text = _savingPosition
                     ? _positions.Status
                     : $"Site: {_positions.Site}\nScan the QR attached beside {_registerTarget.cameraId}.\n" +
-                      "The Meta QR trackable pose will be saved as this camera's spatial anchor.";
+                      "The Meta QR trackable pose will be saved as this camera's spatial anchor." +
+                      "\n" + ScannerStatusLine() +
+                      "\nNo QR? Use Place ahead 4 m to test navigation.";
                 AppendScanNoticeToPanel();
             }
             return;
@@ -503,6 +551,16 @@ public partial class AxisMonitoringUI
     {
         if (_scanNotice != null && Time.unscaledTime < _scanNoticeUntil)
             _spatialText.text += "\n" + _scanNotice;
+    }
+
+    private static string ScannerStatusLine()
+    {
+        QrCameraScanner scanner = QrCameraScanner.Instance;
+
+        if (scanner == null)
+            return "QR scanner: not in scene";
+
+        return scanner.ScannerStatus + " | tracked " + scanner.TrackedQrCount;
     }
 
     private void UpdateScanNotice()
@@ -606,7 +664,7 @@ public partial class AxisMonitoringUI
         }
         else
         {
-            ShowRouteArrow(guidePoint);
+            ShowRouteDashes(_route);
         }
 
         if (_drawerStatus != null)
@@ -626,20 +684,154 @@ public partial class AxisMonitoringUI
         if (_locateSubtitle != null) _locateSubtitle.text = subtitle;
     }
 
-    private void ShowRouteArrow(Vector3 guidePoint)
+    private void ShowRouteDashes(CameraNavigationPath.Route route)
     {
         if (_locateTargetTag != null && _locateTargetTag.activeSelf)
             _locateTargetTag.SetActive(false);
 
-        if (_routeArrow == null) return;
+        Vector3[] corners = route.corners;
+
+        if (corners == null || corners.Length < 2)
+        {
+            HideDashes();
+            ShowRouteArrow(route.nextWaypoint + Vector3.up * 0.02f);
+            return;
+        }
+
+        int used = 0;
+        float travelled = 0f;
+        float nextAlong = RouteDashSpacing * 0.6f;
+        Vector3 lastPoint = Vector3.zero;
+        Vector3 lastDir = Vector3.forward;
+
+        for (int i = 1; i < corners.Length && used < _routeDashes.Count; i++)
+        {
+            Vector3 a = corners[i - 1];
+            Vector3 b = corners[i];
+            Vector3 segment = b - a;
+            float length = segment.magnitude;
+
+            if (length < 0.01f)
+                continue;
+
+            Vector3 dir = segment / length;
+
+            while (nextAlong <= travelled + length && used < _routeDashes.Count)
+            {
+                float t = nextAlong - travelled;
+                Vector3 point = a + dir * t;
+                point.y = a.y + 0.02f;
+
+                GameObject dash = _routeDashes[used];
+                dash.transform.position = point;
+                dash.transform.rotation =
+                    Quaternion.LookRotation(dir, Vector3.up) *
+                    Quaternion.Euler(90f, 0f, 0f);
+
+                // Passthrough has no depth buffer, so a world-space quad is drawn
+                // on top of real walls. Drop dashes that the room geometry blocks.
+                bool blocked = IsOccluded(point);
+                if (dash.activeSelf == blocked)
+                    dash.SetActive(!blocked);
+
+                if (!blocked)
+                {
+                    lastPoint = point;
+                    lastDir = dir;
+                    used++;
+                }
+
+                nextAlong += RouteDashSpacing;
+            }
+
+            travelled += length;
+        }
+
+        if (used > 0)
+        {
+            // The arrow head takes the place of the last dash so the chain does
+            // not visually double up at its end.
+            _routeDashes[used - 1].SetActive(false);
+            ShowRouteArrowAt(lastPoint, lastDir);
+
+            if (used - 1 < _routeDashes.Count)
+                used--;
+        }
+        else
+        {
+            if (_routeArrow != null && _routeArrow.activeSelf)
+                _routeArrow.SetActive(false);
+        }
+
+        for (int i = used; i < _routeDashes.Count; i++)
+        {
+            if (_routeDashes[i].activeSelf)
+                _routeDashes[i].SetActive(false);
+        }
+    }
+
+    private void HideDashes()
+    {
+        for (int i = 0; i < _routeDashes.Count; i++)
+        {
+            if (_routeDashes[i].activeSelf)
+                _routeDashes[i].SetActive(false);
+        }
+    }
+
+    private bool IsOccluded(Vector3 point)
+    {
+        // Dashes close to the user are always shown: at very shallow angles the
+        // ray would graze the floor collider and hide the path underfoot.
+        Vector3 target = point + Vector3.up * 0.2f;
+        Vector3 origin = _camera.transform.position;
+        Vector3 delta = target - origin;
+        float distance = delta.magnitude;
+
+        if (distance < 0.8f)
+            return false;
+
+        if (Physics.Raycast(
+                origin,
+                delta / distance,
+                out RaycastHit hit,
+                distance - 0.15f,
+                ~0,
+                QueryTriggerInteraction.Ignore))
+        {
+            return hit.distance < distance - 0.15f;
+        }
+
+        return false;
+    }
+
+    private void ShowRouteArrow(Vector3 guidePoint)
+    {
+        Vector3 flat = guidePoint - _camera.transform.position;
+        flat.y = 0f;
+
+        if (flat.sqrMagnitude < 0.0001f)
+            flat = _camera.transform.forward;
+
+        ShowRouteArrowAt(guidePoint, flat.normalized);
+    }
+
+    private void ShowRouteArrowAt(Vector3 position, Vector3 forward)
+    {
+        if (_locateTargetTag != null && _locateTargetTag.activeSelf)
+            _locateTargetTag.SetActive(false);
+
+        if (_routeArrow == null)
+            return;
 
         if (!_routeArrow.activeSelf)
             _routeArrow.SetActive(true);
 
-        _routeArrow.transform.position = guidePoint;
+        _routeArrow.transform.position = position;
 
-        Vector3 flat = guidePoint - _camera.transform.position;
+        Vector3 flat = forward;
         flat.y = 0f;
+
         if (flat.sqrMagnitude > 0.0001f)
             _routeArrow.transform.rotation = Quaternion.LookRotation(flat.normalized, Vector3.up);
     }
@@ -648,6 +840,8 @@ public partial class AxisMonitoringUI
     {
         if (_routeArrow != null && _routeArrow.activeSelf)
             _routeArrow.SetActive(false);
+
+        HideDashes();
 
         if (_locateTargetTag == null) return;
 
@@ -665,6 +859,7 @@ public partial class AxisMonitoringUI
     {
         if (_routeArrow != null && _routeArrow.activeSelf)
             _routeArrow.SetActive(false);
+        HideDashes();
         if (_locateTargetTag != null && _locateTargetTag.activeSelf)
             _locateTargetTag.SetActive(false);
     }

@@ -14,6 +14,84 @@ public class XRClickable : MonoBehaviour
     private bool _pressed;
     private Vector3 _normalScale;
     private Coroutine _pressRoutine;
+    private float _lastInvokeTime = -10f;
+
+    // The Interaction SDK ray owns aiming and selection. These fallbacks only
+    // cover the case where the SDK Select event is not delivered: they fire
+    // immediately on a pinch or a controller button, never on a timer.
+    private static OVRHand[] _trackedHands;
+    private static bool[] _pinchState;
+    private static bool _handSearchDone;
+    private static int _pinchFrame = -1;
+    private static bool _pinchEdge;
+
+    private void Update()
+    {
+        if (!_hovered)
+            return;
+
+        if (Time.unscaledTime - _lastInvokeTime < 0.35f)
+            return;
+
+        if (PinchStartedThisFrame() || ControllerSelectPressed())
+            InvokeClick();
+    }
+
+    private static bool ControllerSelectPressed()
+    {
+        return OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger)
+            || OVRInput.GetDown(OVRInput.Button.One)
+            || OVRInput.GetDown(OVRInput.Button.Two);
+    }
+
+    private static bool PinchStartedThisFrame()
+    {
+        // Every button runs Update, so resolve the shared pinch edge once per
+        // frame instead of once per button.
+        if (_pinchFrame == Time.frameCount)
+            return _pinchEdge;
+
+        _pinchFrame = Time.frameCount;
+        _pinchEdge = false;
+
+        // Scene search is expensive. Do it once.
+        if (!_handSearchDone)
+        {
+            _handSearchDone = true;
+
+            _trackedHands = FindObjectsByType<OVRHand>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+
+            if (_trackedHands == null || _trackedHands.Length == 0)
+            {
+                _trackedHands = null;
+                Debug.Log("XRClickable: no OVRHand in scene, relying on dwell and controller input.");
+                return false;
+            }
+
+            _pinchState = new bool[_trackedHands.Length];
+        }
+
+        if (_trackedHands == null)
+            return false;
+
+        for (int i = 0; i < _trackedHands.Length; i++)
+        {
+            OVRHand hand = _trackedHands[i];
+            if (hand == null)
+                continue;
+
+            bool pinching = hand.GetFingerIsPinching(OVRHand.HandFinger.Index);
+
+            if (pinching && !_pinchState[i])
+                _pinchEdge = true;
+
+            _pinchState[i] = pinching;
+        }
+
+        return _pinchEdge;
+    }
 
     public void Initialize(
         Image targetImage,
@@ -41,6 +119,13 @@ public class XRClickable : MonoBehaviour
 
     public void InvokeClick()
     {
+        // A single pinch can reach this method from both the SDK Select event
+        // and the fallbacks in the same frame. Ignore the duplicate.
+        if (Time.unscaledTime - _lastInvokeTime < 0.35f)
+            return;
+
+        _lastInvokeTime = Time.unscaledTime;
+
         if (_pressRoutine != null)
             StopCoroutine(_pressRoutine);
 

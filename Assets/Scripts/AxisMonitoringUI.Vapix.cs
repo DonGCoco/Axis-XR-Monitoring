@@ -1,3 +1,5 @@
+using UnityEngine;
+
 public partial class AxisMonitoringUI
 {
     private void BuildVapixHealthyDetails(CameraData camera)

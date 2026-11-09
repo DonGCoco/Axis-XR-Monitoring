@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Meta.XR.MRUtilityKit;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -13,10 +14,10 @@ public partial class AxisMonitoringUI
     private const float LocateDrawerHeight = 230f;
     private const float LocateNoticeHeight = 44f;
     private const float LocateBarDistance = 0.72f;
-    // The bar and drawer sit in the left column so the walkable view stays
-    // clear; a centred panel blocked the sightline during the on-device test.
-    private const float LocateBarOffsetX = -0.29f;
-    private const float LocateBarDrop = 0.06f;
+    // Centred horizontally but stacked above the eye line: the walking view
+    // stays clear while the panel remains easy to find with a glance up.
+    private const float LocateBarOffsetX = 0f;
+    private const float LocateBarDrop = 0.10f;
     private const float LocateNearDistance = 0.8f;
 
     private static readonly Color LocateArrowColor =
@@ -53,6 +54,8 @@ public partial class AxisMonitoringUI
     private string _scanNotice;
     private float _scanNoticeUntil;
     private float _routeRefreshAt;
+    private float _nextRouteLogAt;
+    private bool _worldGuidesBuilt;
     private bool _routeAvailable;
     private CameraNavigationPath.Route _route;
     public int SpatialWorkflowVersion { get; private set; }
@@ -102,6 +105,17 @@ public partial class AxisMonitoringUI
         if (_locateNoticeRoot) Destroy(_locateNoticeRoot);
         if (_routeArrow) Destroy(_routeArrow);
         if (_locateTargetTag) Destroy(_locateTargetTag);
+
+        // The dashed trail lives on root objects as well, so it has to be torn
+        // down here or the floor route survives Cancel.
+        for (int i = 0; i < _routeDashes.Count; i++)
+        {
+            if (_routeDashes[i])
+                Destroy(_routeDashes[i]);
+        }
+
+        _routeDashes.Clear();
+        _worldGuidesBuilt = false;
 
         _locateBarRoot = null;
         _locateDrawerRoot = null;
@@ -238,7 +252,8 @@ public partial class AxisMonitoringUI
             _camera.transform,
             new Vector3(
                 LocateBarOffsetX,
-                LocateBarDrop - (LocateBarHeight * 0.0005f) - 0.006f - (LocateDrawerHeight * 0.0005f),
+                LocateBarDrop + (LocateBarHeight * 0.0005f) + 0.004f +
+                    (LocateNoticeHeight * 0.001f) + 0.006f + (LocateDrawerHeight * 0.0005f),
                 LocateBarDistance),
             PanelSoftColor);
 
@@ -305,8 +320,15 @@ public partial class AxisMonitoringUI
 
     private void BuildWorldGuides()
     {
-        // Floor arrow: three plain UI quads on a canvas laid flat on the ground.
-        // Reusing the UI material avoids shipping an extra shader with the build.
+        // Entering Locate repeatedly must not stack another set of guides: the
+        // previous ones would stay in the scene with no reference to hide them.
+        if (_worldGuidesBuilt)
+            return;
+
+        _worldGuidesBuilt = true;
+
+        // Route head: a chevron on a canvas laid flat on the ground, built from
+        // UI quads so no extra shader ships with the build.
         _routeArrow = new GameObject("RouteArrow");
         GameObject arrowCanvas = CreateCanvas(
             "ArrowCanvas",
@@ -317,9 +339,10 @@ public partial class AxisMonitoringUI
         arrowCanvas.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
         arrowCanvas.transform.localScale = Vector3.one * 0.004f;
 
-        CreateArrowBar(arrowCanvas.transform, new Vector2(16f, 56f), new Vector2(0f, -14f), 0f);
-        CreateArrowBar(arrowCanvas.transform, new Vector2(16f, 40f), new Vector2(-13f, 20f), 45f);
-        CreateArrowBar(arrowCanvas.transform, new Vector2(16f, 40f), new Vector2(13f, 20f), -45f);
+        // Route head: same chevron as the trail, scaled up so the end of the
+        // path reads as a destination rather than a different symbol.
+        CreateArrowBar(arrowCanvas.transform, new Vector2(24f, 62f), new Vector2(16f, 0f), 45f);
+        CreateArrowBar(arrowCanvas.transform, new Vector2(24f, 62f), new Vector2(-16f, 0f), -45f);
         _routeArrow.SetActive(false);
 
         // Dashed path. Each dash gets its own tiny world-space canvas so it can
@@ -334,8 +357,10 @@ public partial class AxisMonitoringUI
                 new Color(0f, 0f, 0f, 0f));
 
             // Chevron instead of a plain bar so the trail reads as direction.
-            CreateArrowBar(dash.transform, new Vector2(13f, 34f), new Vector2(-9f, 10f), 45f);
-            CreateArrowBar(dash.transform, new Vector2(13f, 34f), new Vector2(9f, 10f), -45f);
+            // Mirrored relative to the old arrow head: on device the first
+            // version pointed back towards the user.
+            CreateArrowBar(dash.transform, new Vector2(13f, 34f), new Vector2(9f, 0f), 45f);
+            CreateArrowBar(dash.transform, new Vector2(13f, 34f), new Vector2(-9f, 0f), -45f);
 
             dash.SetActive(false);
             _routeDashes.Add(dash);
@@ -414,32 +439,10 @@ public partial class AxisMonitoringUI
             "Scan the QR attached beside " + camera.cameraId + ".\n" +
             "Its tracked QR pose will become the saved physical camera position.\n" +
             "No controller placement is required.";
-        CreateButton(_spatialRoot.transform, "Place ahead 4 m", new Vector2(240f, 52f), new Vector2(-135f, -310f),
-            () => SavePosition(camera, TestPlacementPose(4f)), AccentColor);
-        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(150f, 52f), new Vector2(170f, -310f),
+        CreateButton(_spatialRoot.transform, "Cancel", new Vector2(160f, 52f), new Vector2(0f, -310f),
             () => ShowDetails(camera), PanelSoftColor);
     }
 
-    // Test-only placement so the navigation UI can be validated on a rig where
-    // MRUK does not surface QR trackables. The saved pose is a real Meta
-    // spatial anchor, only its position is synthesised.
-    private Pose TestPlacementPose(float meters)
-    {
-        Transform head = _camera.transform;
-
-        Vector3 forward = head.forward;
-        forward.y = 0f;
-
-        if (forward.sqrMagnitude < 0.0001f)
-            forward = Vector3.forward;
-
-        forward.Normalize();
-
-        Vector3 position = head.position + forward * meters;
-        position.y = head.position.y - 1.2f;
-
-        return new Pose(position, Quaternion.LookRotation(forward, Vector3.up));
-    }
 
     // QrCameraScanner calls this with the Meta MRUK trackable pose.
     // Return true when the QR was consumed by registration mode.
@@ -534,8 +537,7 @@ public partial class AxisMonitoringUI
                     ? _positions.Status
                     : $"Site: {_positions.Site}\nScan the QR attached beside {_registerTarget.cameraId}.\n" +
                       "The Meta QR trackable pose will be saved as this camera's spatial anchor." +
-                      "\n" + ScannerStatusLine() +
-                      "\nNo QR? Use Place ahead 4 m to test navigation.";
+                      "\n" + ScannerStatusLine();
                 AppendScanNoticeToPanel();
             }
             return;
@@ -628,6 +630,15 @@ public partial class AxisMonitoringUI
         if (!_routeAvailable)
         {
             HideWorldGuides();
+
+            if (Time.unscaledTime >= _nextRouteLogAt)
+            {
+                _nextRouteLogAt = Time.unscaledTime + 3f;
+                Debug.LogWarning(
+                    "LOCATE ROUTE UNAVAILABLE | " + _navigationPath.Status +
+                    " | target=" + target.ToString("0.00") +
+                    " | head=" + _camera.transform.position.ToString("0.00"));
+            }
 
             string stateLabel =
                 _navigationPath.State == CameraNavigationPath.NavigationState.SceneSetupRequired ? "Space Setup needed" :
@@ -727,7 +738,7 @@ public partial class AxisMonitoringUI
             {
                 float t = nextAlong - travelled;
                 Vector3 point = a + dir * t;
-                point.y = GroundHeight(point) + 0.004f;
+                point.y = GroundHeight(point) + 0.002f;
 
                 GameObject dash = _routeDashes[used];
                 dash.transform.position = point;
@@ -787,7 +798,8 @@ public partial class AxisMonitoringUI
     }
 
     // The NavMesh surface sits slightly above the room floor, so a dash placed
-    // at navmesh height floats. Drop it onto the real floor collider instead.
+    // at navmesh height floats. Drop it onto the real floor: physics colliders
+    // first, then the MRUK room geometry, which exists without colliders.
     private float GroundHeight(Vector3 point)
     {
         Vector3 origin = point + Vector3.up * 0.5f;
@@ -803,6 +815,24 @@ public partial class AxisMonitoringUI
             return hit.point.y;
         }
 
+        MRUK mruk = MRUK.Instance;
+
+        if (mruk != null && mruk.Rooms != null)
+        {
+            Ray down = new Ray(origin, Vector3.down);
+
+            for (int i = 0; i < mruk.Rooms.Count; i++)
+            {
+                MRUKRoom room = mruk.Rooms[i];
+
+                if (room == null)
+                    continue;
+
+                if (room.Raycast(down, 1.2f, out RaycastHit roomHit))
+                    return roomHit.point.y;
+            }
+        }
+
         return point.y;
     }
 
@@ -810,7 +840,7 @@ public partial class AxisMonitoringUI
     {
         // Dashes close to the user are always shown: at very shallow angles the
         // ray would graze the floor collider and hide the path underfoot.
-        Vector3 target = point + Vector3.up * 0.2f;
+        Vector3 target = point + Vector3.up * 0.15f;
         Vector3 origin = _camera.transform.position;
         Vector3 delta = target - origin;
         float distance = delta.magnitude;
@@ -818,18 +848,28 @@ public partial class AxisMonitoringUI
         if (distance < 0.8f)
             return false;
 
-        if (Physics.Raycast(
-                origin,
-                delta / distance,
-                out RaycastHit hit,
-                distance - 0.15f,
-                ~0,
-                QueryTriggerInteraction.Ignore))
+        float reach = distance - 0.2f;
+        Ray ray = new Ray(origin, delta / distance);
+
+        // MRUK room geometry is the reliable occluder in passthrough: the walls
+        // have no render mesh and therefore no physics colliders.
+        MRUK mruk = MRUK.Instance;
+
+        if (mruk != null && mruk.Rooms != null)
         {
-            return hit.distance < distance - 0.15f;
+            for (int i = 0; i < mruk.Rooms.Count; i++)
+            {
+                MRUKRoom room = mruk.Rooms[i];
+
+                if (room == null)
+                    continue;
+
+                if (room.Raycast(ray, reach, out RaycastHit roomHit))
+                    return roomHit.distance < reach;
+            }
         }
 
-        return false;
+        return Physics.Raycast(ray, out RaycastHit hit, reach, ~0, QueryTriggerInteraction.Ignore);
     }
 
     private void ShowRouteArrow(Vector3 guidePoint)

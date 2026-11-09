@@ -1853,6 +1853,10 @@ public partial class AxisMonitoringUI : MonoBehaviour
 
     private void DestroyTransientUi()
     {
+        // World-space guides live outside the panel hierarchy, so they have to
+        // be cleared here as well; otherwise the floor route survives Cancel.
+        HideWorldGuides();
+
         StopLiveView();
         if (_onboardingRoot != null)
         {

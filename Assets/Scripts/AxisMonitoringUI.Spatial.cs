@@ -13,7 +13,10 @@ public partial class AxisMonitoringUI
     private const float LocateDrawerHeight = 230f;
     private const float LocateNoticeHeight = 44f;
     private const float LocateBarDistance = 0.72f;
-    private const float LocateBarDrop = -0.135f;
+    // The bar and drawer sit in the left column so the walkable view stays
+    // clear; a centred panel blocked the sightline during the on-device test.
+    private const float LocateBarOffsetX = -0.29f;
+    private const float LocateBarDrop = 0.06f;
     private const float LocateNearDistance = 0.8f;
 
     private static readonly Color LocateArrowColor =
@@ -33,7 +36,7 @@ public partial class AxisMonitoringUI
     private GameObject _routeArrow;
     private readonly List<GameObject> _routeDashes = new List<GameObject>();
     private const int RouteDashCount = 18;
-    private const float RouteDashSpacing = 0.3f;
+    private const float RouteDashSpacing = 0.26f;
     private GameObject _locateTargetTag;
     private Text _locateArrowGlyph;
     private Text _locateDistance;
@@ -144,13 +147,13 @@ public partial class AxisMonitoringUI
         DestroyTransientUi();
         if (_hudRoot) _hudRoot.SetActive(false);
 
-        // Direction bar. Deliberately small and dropped below the eye line so
-        // the walkable view stays clear while the user moves to the camera.
+        // Direction bar. Anchored in the left column, comfortably away from the
+        // sightline, so walking to the camera stays unobstructed.
         _locateBarRoot = CreateCanvas(
             "LocateBar",
             new Vector2(LocateBarWidth, LocateBarHeight),
             _camera.transform,
-            new Vector3(0f, LocateBarDrop, LocateBarDistance),
+            new Vector3(LocateBarOffsetX, LocateBarDrop, LocateBarDistance),
             PanelColor);
 
         CreateRect(
@@ -204,7 +207,7 @@ public partial class AxisMonitoringUI
             new Vector2(LocateBarWidth, LocateNoticeHeight),
             _camera.transform,
             new Vector3(
-                0f,
+                LocateBarOffsetX,
                 LocateBarDrop + (LocateBarHeight * 0.0005f) + 0.004f + (LocateNoticeHeight * 0.0005f),
                 LocateBarDistance),
             PanelSoftColor);
@@ -234,7 +237,7 @@ public partial class AxisMonitoringUI
             new Vector2(LocateBarWidth, LocateDrawerHeight),
             _camera.transform,
             new Vector3(
-                0f,
+                LocateBarOffsetX,
                 LocateBarDrop - (LocateBarHeight * 0.0005f) - 0.006f - (LocateDrawerHeight * 0.0005f),
                 LocateBarDistance),
             PanelSoftColor);
@@ -325,10 +328,14 @@ public partial class AxisMonitoringUI
         {
             GameObject dash = CreateCanvas(
                 "RouteDash" + i,
-                new Vector2(34f, 88f),
+                new Vector2(64f, 64f),
                 null,
                 Vector3.zero,
-                LocateArrowColor);
+                new Color(0f, 0f, 0f, 0f));
+
+            // Chevron instead of a plain bar so the trail reads as direction.
+            CreateArrowBar(dash.transform, new Vector2(13f, 34f), new Vector2(-9f, 10f), 45f);
+            CreateArrowBar(dash.transform, new Vector2(13f, 34f), new Vector2(9f, 10f), -45f);
 
             dash.SetActive(false);
             _routeDashes.Add(dash);
@@ -720,7 +727,7 @@ public partial class AxisMonitoringUI
             {
                 float t = nextAlong - travelled;
                 Vector3 point = a + dir * t;
-                point.y = a.y + 0.02f;
+                point.y = GroundHeight(point) + 0.004f;
 
                 GameObject dash = _routeDashes[used];
                 dash.transform.position = point;
@@ -777,6 +784,26 @@ public partial class AxisMonitoringUI
             if (_routeDashes[i].activeSelf)
                 _routeDashes[i].SetActive(false);
         }
+    }
+
+    // The NavMesh surface sits slightly above the room floor, so a dash placed
+    // at navmesh height floats. Drop it onto the real floor collider instead.
+    private float GroundHeight(Vector3 point)
+    {
+        Vector3 origin = point + Vector3.up * 0.5f;
+
+        if (Physics.Raycast(
+                origin,
+                Vector3.down,
+                out RaycastHit hit,
+                1.2f,
+                ~0,
+                QueryTriggerInteraction.Ignore))
+        {
+            return hit.point.y;
+        }
+
+        return point.y;
     }
 
     private bool IsOccluded(Vector3 point)

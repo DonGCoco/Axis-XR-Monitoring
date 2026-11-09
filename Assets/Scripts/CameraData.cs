@@ -47,6 +47,23 @@ public class CameraData
     public float maxPower;
     public float powerRequested;
     public int poeClass;
+
+    // Native image health events delivered by the Windows proxy.
+    public bool imageHealthExpected;
+    public bool imageHealthAvailable;
+    public bool imageHealthStreamConnected;
+    public string imageHealthLastEvent;
+    public string imageHealthError;
+    public CameraIssue[] issues;
+}
+
+[Serializable]
+public class CameraIssue
+{
+    public string type;
+    public string message;
+    public string severity;
+    public string source;
 }
 
 [Serializable]
@@ -60,3 +77,4 @@ public class CameraError
 {
     public string error;
 }
+

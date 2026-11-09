@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -39,7 +40,11 @@ public class CameraApiClient : MonoBehaviour
     public string BaseUrl
     {
         get => baseUrl;
-        set => baseUrl = value.TrimEnd('/');
+        set
+        {
+            baseUrl = (value ?? "").TrimEnd('/');
+            cachedList = null;
+        }
     }
 
     public bool UseEmbeddedMockData
@@ -120,7 +125,57 @@ public class CameraApiClient : MonoBehaviour
         StartCoroutine(GetCameraCoroutine(normalizedId, onSuccess, onError));
     }
 
+    private readonly List<KeyValuePair<Action<CameraData[]>, Action<string>>> listWaiters =
+        new List<KeyValuePair<Action<CameraData[]>, Action<string>>>();
+    private bool listRequestInFlight;
+    private CameraData[] cachedList;
+    private float cachedListUntil;
+
     public void GetAllCameras(
+        Action<CameraData[]> onSuccess,
+        Action<string> onError = null)
+    {
+        if (cachedList != null && Time.realtimeSinceStartup < cachedListUntil)
+        {
+            onSuccess?.Invoke((CameraData[])cachedList.Clone());
+            return;
+        }
+        listWaiters.Add(new KeyValuePair<Action<CameraData[]>, Action<string>>(onSuccess, onError));
+        if (listRequestInFlight) return;
+        listRequestInFlight = true;
+        FetchAllCameras(
+            cameras => CompleteListRequest(cameras, null),
+            error => CompleteListRequest(null, error));
+    }
+
+    private void CompleteListRequest(CameraData[] cameras, string error)
+    {
+        listRequestInFlight = false;
+        var callbacks = listWaiters.ToArray();
+        listWaiters.Clear();
+        if (error == null && cameras != null)
+        {
+            cachedList = (CameraData[])cameras.Clone();
+            cachedListUntil = Time.realtimeSinceStartup + 4f;
+        }
+        else
+        {
+            cachedList = null;
+        }
+        foreach (var callback in callbacks)
+        {
+            try
+            {
+                if (error == null && cameras != null)
+                    callback.Key?.Invoke((CameraData[])cameras.Clone());
+                else
+                    callback.Value?.Invoke(error ?? "Camera list unavailable.");
+            }
+            catch (Exception exception) { Debug.LogException(exception); }
+        }
+    }
+
+    private void FetchAllCameras(
         Action<CameraData[]> onSuccess,
         Action<string> onError = null)
     {
@@ -723,7 +778,7 @@ public class CameraApiClient : MonoBehaviour
         string url = $"{baseUrl.TrimEnd('/')}/camera/{UnityWebRequest.EscapeURL(cameraId)}";
 
         using UnityWebRequest request = UnityWebRequest.Get(url);
-        request.timeout = 8;
+        request.timeout = 45;
 
         yield return request.SendWebRequest();
 
@@ -768,7 +823,8 @@ public class CameraApiClient : MonoBehaviour
         string url = $"{baseUrl.TrimEnd('/')}/cameras";
 
         using UnityWebRequest request = UnityWebRequest.Get(url);
-        request.timeout = 10;
+        // The lab proxy reads telemetry from three physical cameras sequentially.
+        request.timeout = 60;
 
         yield return request.SendWebRequest();
 
@@ -871,3 +927,4 @@ public class CameraApiClient : MonoBehaviour
         public float maxPower;
     }
 }
+

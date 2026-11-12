@@ -23,6 +23,12 @@ public class CameraData
     public bool temperatureAlarmAvailable;
     public bool temperatureAlarmActive;
 
+    public bool imageHealthExpected;
+    public bool imageHealthAvailable;
+    public bool imageHealthStreamConnected;
+    public string imageHealthLastEvent;
+    public string imageHealthError;
+
     // Real Axis/VAPIX telemetry.
     public bool vapixTelemetry;
     public string serialNumber;
@@ -75,3 +81,4 @@ public class CameraHealthIssue
     public string source;
     public string evidence;
 }
+

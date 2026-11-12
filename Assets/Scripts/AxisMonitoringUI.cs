@@ -115,6 +115,7 @@ public partial class AxisMonitoringUI : MonoBehaviour
         // Do not create a parallel custom ray system here.
         BuildHud();
         InitializeSpatialWorkflow();
+        StartHealthAlerts();
 
         if (PlayerPrefs.GetInt(OnboardingKey, 0) == 0)
             ShowOnboarding(0);
@@ -1164,6 +1165,8 @@ public partial class AxisMonitoringUI : MonoBehaviour
 
         if (status == "WARNING")
         {
+            if (camera.issues != null && camera.issues.Length > 0)
+                return HealthIssueText(camera);
             if (camera.temperatureAvailable &&
                 camera.temperature >= 70f)
             {
@@ -1176,7 +1179,7 @@ public partial class AxisMonitoringUI : MonoBehaviour
             return "Attention";
         }
 
-        return "—";
+        return status == "UNKNOWN" ? "Status unavailable" : "—";
     }
 
     private static string NormalizeStatus(string status)
@@ -1508,8 +1511,10 @@ public partial class AxisMonitoringUI : MonoBehaviour
             BuildOfflineDetails(camera);
         else if (status == "WARNING")
             BuildWarningDetails(camera);
-        else
+        else if (status == "HEALTHY")
             BuildHealthyDetails(camera);
+        else
+            BuildUnknownHealthDetails(camera);
 
         _detailsCameraId = camera.cameraId;
         _locationStatus = AddText(_detailsRoot.transform, "Loading position…", 17, FontStyle.Normal,
@@ -1588,7 +1593,12 @@ public partial class AxisMonitoringUI : MonoBehaviour
         string issueTitle = "Attention required";
         string issueValue = "";
 
-        if (camera.temperatureAvailable &&
+        if (camera.issues != null && camera.issues.Length > 0)
+        {
+            issueTitle = "Reported camera issues";
+            issueValue = HealthIssueText(camera);
+        }
+        else if (camera.temperatureAvailable &&
             camera.temperature >= 70f)
         {
             issueTitle = "High temperature";
@@ -2208,8 +2218,10 @@ public partial class AxisMonitoringUI : MonoBehaviour
                 return "■";
             case "WARNING":
                 return "▲";
-            default:
+            case "HEALTHY":
                 return "●";
+            default:
+                return "?";
         }
     }
 
@@ -2221,8 +2233,10 @@ public partial class AxisMonitoringUI : MonoBehaviour
                 return OfflineColor;
             case "WARNING":
                 return WarningColor;
-            default:
+            case "HEALTHY":
                 return HealthyColor;
+            default:
+                return TextSecondary;
         }
     }
 
@@ -2263,3 +2277,4 @@ public partial class AxisMonitoringUI : MonoBehaviour
         return $"{minutes}m";
     }
 }
+

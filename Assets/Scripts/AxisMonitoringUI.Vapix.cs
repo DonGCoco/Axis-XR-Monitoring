@@ -54,7 +54,8 @@ public partial class AxisMonitoringUI
                 $"Power|{power}",
                 $"Peak / PoE|{powerPeak}",
                 $"Uptime|{FormatUptime(camera.uptime)}",
-                $"OS / Serial|{osAndSerial}"
+                $"OS / Serial|{osAndSerial}",
+                $"Image health|{(camera.imageHealthExpected ? (camera.imageHealthAvailable ? "Normal" : "Unavailable") : "Not monitored")}"
             },
             34f);
     }
@@ -117,3 +118,4 @@ public partial class AxisMonitoringUI
     }
 
 }
+
